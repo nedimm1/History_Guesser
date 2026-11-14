@@ -1,0 +1,190 @@
+:root {
+  --bg: #f3ead8;
+  --ink: #3b2f22;
+  --muted: #7a6a55;
+  --accent: #9c3d26;
+  --accent-ink: #fff8ee;
+  --card: #fbf5e9;
+  --line: #d8c7a6;
+  --ocean: #cfdcd6;
+  --land: #e8dcc1;
+  --guess: #2f5d8a;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1d1914;
+    --ink: #eee3cf;
+    --muted: #a89a82;
+    --accent: #d0694c;
+    --accent-ink: #1d1914;
+    --card: #28221b;
+    --line: #4a3f31;
+    --ocean: #2a3a3a;
+    --land: #4a4232;
+    --guess: #7fb0e0;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; min-height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: Inter, system-ui, sans-serif;
+}
+h1, .brand, .guess-readout {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+}
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 10px 18px;
+  transition: transform 0.1s, background 0.15s;
+}
+button:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--muted); }
+button:disabled { opacity: 0.5; cursor: default; }
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  padding: 10px 28px;
+}
+
+/* --- menu --- */
+.menu {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 12vh 16px 40px;
+  text-align: center;
+}
+.menu h1 { font-size: clamp(48px, 9vw, 84px); margin: 0; letter-spacing: 0.5px; }
+.tagline { color: var(--muted); font-size: 18px; line-height: 1.5; }
+.region-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin: 36px 0 20px;
+}
+.region-btn { padding: 22px 12px; font-size: 17px; font-weight: 500; }
+.fine { color: var(--muted); font-size: 13px; }
+.row { display: flex; gap: 12px; justify-content: center; margin-top: 24px; }
+
+.results { width: 100%; border-collapse: collapse; margin-top: 28px; font-size: 15px; }
+.results th, .results td { padding: 10px 8px; border-bottom: 1px solid var(--line); }
+.results th { color: var(--muted); font-weight: 500; font-size: 13px; }
+
+/* --- game --- */
+.game { max-width: 1200px; margin: 0 auto; padding: 12px 16px 24px; }
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 2px 12px;
+}
+.brand { font-size: 26px; font-weight: 700; cursor: pointer; }
+.stats { display: flex; gap: 20px; color: var(--muted); font-size: 14px; }
+.stats b { color: var(--ink); }
+
+.map-wrap {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--ocean);
+  box-shadow: 0 6px 24px rgba(60, 40, 10, 0.12);
+}
+.map { display: block; width: 100%; height: auto; touch-action: none; cursor: grab; user-select: none; }
+.map:active { cursor: grabbing; }
+.ocean { fill: var(--ocean); }
+.sphere { fill: none; stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.graticule { fill: none; stroke: var(--ink); stroke-opacity: 0.07; vector-effect: non-scaling-stroke; }
+.land { fill: var(--land); }
+.unclaimed { fill: var(--land); stroke: var(--muted); stroke-opacity: 0.25; stroke-width: 0.5; vector-effect: non-scaling-stroke; }
+.polity {
+  stroke: #3b2f22;
+  stroke-opacity: 0.55;
+  stroke-width: 0.6;
+  vector-effect: non-scaling-stroke;
+  fill-opacity: 0.85;
+}
+.polity.hover { fill-opacity: 1; stroke-width: 1.4; stroke-opacity: 0.9; }
+.label {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-weight: 700;
+  fill: #2a2016;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: rgba(255, 250, 238, 0.75);
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+.map-loading {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  font-family: 'Cormorant Garamond', serif; font-size: 24px; color: var(--muted);
+}
+.tooltip {
+  position: absolute; top: 12px; left: 12px;
+  background: var(--card); border: 1px solid var(--line);
+  padding: 6px 12px; border-radius: 6px; font-size: 14px; pointer-events: none;
+}
+.map-controls { position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 6px; }
+.map-controls button { width: 36px; height: 36px; padding: 0; font-size: 18px; }
+
+.panel {
+  margin-top: 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px 20px 12px;
+}
+.timeline { padding: 34px 6px 28px; }
+.track { position: relative; height: 26px; cursor: pointer; touch-action: none; outline: none; }
+.track.locked { cursor: default; }
+.track:focus-visible .rail { box-shadow: 0 0 0 3px color-mix(in srgb, var(--guess) 40%, transparent); }
+.rail {
+  position: absolute; top: 11px; left: 0; right: 0; height: 4px; border-radius: 2px;
+  background: linear-gradient(90deg, #b9a17a, #c98b5f, #9c3d26, #2f5d8a);
+  opacity: 0.6;
+}
+.tick { position: absolute; top: 6px; width: 1px; height: 14px; background: var(--muted); opacity: 0.5; }
+.tick span {
+  position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
+  font-size: 11px; color: var(--muted); white-space: nowrap;
+}
+.marker {
+  position: absolute; top: 3px; width: 20px; height: 20px; margin-left: -10px;
+  border-radius: 50%; border: 3px solid var(--card); box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.marker span {
+  position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+}
+.marker.guess { background: var(--guess); }
+.marker.guess span { color: var(--guess); }
+.marker.actual { background: var(--accent); z-index: 1; }
+.marker.actual span { color: var(--accent); bottom: auto; top: 26px; z-index: 2; background: var(--card); padding: 0 4px; }
+.gap { position: absolute; top: 11px; height: 4px; background: var(--ink); opacity: 0.5; }
+
+.actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.guess-readout { font-size: 34px; font-weight: 700; margin-right: auto; min-width: 160px; }
+.reveal-text { margin-right: auto; font-size: 18px; }
+.pts { margin-left: 14px; color: var(--accent); font-weight: 700; font-size: 22px; }
+
+@media (max-width: 640px) {
+  .stats { gap: 12px; font-size: 13px; }
+  .tick:nth-child(odd) span { display: none; }
+  .guess-readout { font-size: 28px; min-width: 0; }
+}
