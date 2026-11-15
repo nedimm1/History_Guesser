@@ -3,16 +3,15 @@ import yearsData from './years.json'
 export const ALL_YEARS = yearsData.years
 export const ROUNDS = 5
 export const MAX_POINTS = 5000
-export const MIN_YEAR = -3000
+export const MIN_YEAR = 1 // the game covers the Common Era; the earliest map is 1 BC
 export const MAX_YEAR = 2010
-export const HINT_PENALTY = 0.4 // using the names hint costs 40% of the round's points
 
 // [west, south, east, north] in degrees
 export const REGIONS = {
-  world: { label: 'Whole World', bbox: null, minYear: -3000 },
-  europe: { label: 'Europe & Mediterranean', bbox: [-12, 25, 50, 62], minYear: -1500 },
-  mideast: { label: 'Africa & Middle East', bbox: [-20, -36, 65, 42], minYear: -3000 },
-  asia: { label: 'Asia', bbox: [45, -10, 150, 58], minYear: -2000 },
+  world: { label: 'Whole World', bbox: null, minYear: -1 },
+  europe: { label: 'Europe & Mediterranean', bbox: [-12, 25, 50, 62], minYear: -1 },
+  mideast: { label: 'Africa & Middle East', bbox: [-20, -36, 65, 42], minYear: -1 },
+  asia: { label: 'Asia', bbox: [45, -10, 150, 58], minYear: -1 },
   americas: { label: 'The Americas', bbox: [-170, -56, -30, 72], minYear: 500 },
 }
 
@@ -35,22 +34,21 @@ export function tolerance(actual) {
   return Math.max(25, age * 0.15)
 }
 
-export function scoreGuess(guess, actual, usedHint) {
+export function scoreGuess(guess, actual) {
   const diff = Math.abs(guess - actual)
   let pts = MAX_POINTS * Math.exp(-diff / tolerance(actual))
   if (diff <= 2) pts = MAX_POINTS
-  if (usedHint) pts *= 1 - HINT_PENALTY
   return Math.round(pts)
 }
 
 // Non-linear timeline: modern centuries get more slider space than ancient ones.
 const ANCHORS = [
-  [0, -3000],
-  [0.18, -1000],
-  [0.36, 0],
-  [0.56, 1000],
-  [0.76, 1600],
-  [0.9, 1850],
+  [0, MIN_YEAR],
+  [0.25, 500],
+  [0.45, 1000],
+  [0.65, 1500],
+  [0.8, 1800],
+  [0.9, 1900],
   [1, 2010],
 ]
 
@@ -74,7 +72,7 @@ export function yearToPos(y) {
   return 1
 }
 
-export const TICKS = [-3000, -2000, -1000, -500, 0, 500, 1000, 1400, 1600, 1800, 1900, 2000]
+export const TICKS = [1, 250, 500, 750, 1000, 1250, 1500, 1650, 1800, 1900, 2000]
 
 export function rating(total) {
   const pct = total / (MAX_POINTS * ROUNDS)

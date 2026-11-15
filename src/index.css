@@ -105,18 +105,20 @@ header {
 .map { display: block; width: 100%; height: auto; touch-action: none; cursor: grab; user-select: none; }
 .map:active { cursor: grabbing; }
 .ocean { fill: var(--ocean); }
-.sphere { fill: none; stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .graticule { fill: none; stroke: var(--ink); stroke-opacity: 0.07; vector-effect: non-scaling-stroke; }
 .land { fill: var(--land); }
-.unclaimed { fill: var(--land); stroke: var(--muted); stroke-opacity: 0.25; stroke-width: 0.5; vector-effect: non-scaling-stroke; }
-.polity {
+.unclaimed { fill: var(--land); stroke: none; }
+.polity { stroke: none; }
+.polity.hover { filter: brightness(1.1); stroke: #3b2f22; stroke-width: 1.4; stroke-opacity: 0.9; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.borders {
+  fill: none;
   stroke: #3b2f22;
   stroke-opacity: 0.55;
   stroke-width: 0.6;
+  stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
-  fill-opacity: 0.85;
+  pointer-events: none;
 }
-.polity.hover { fill-opacity: 1; stroke-width: 1.4; stroke-opacity: 0.9; }
 .label {
   font-family: 'Cormorant Garamond', Georgia, serif;
   font-weight: 700;
@@ -129,6 +131,14 @@ header {
   stroke-linejoin: round;
   pointer-events: none;
   vector-effect: non-scaling-stroke;
+}
+/* Peoples, tribes and cultures: not states, so quieter than state names. */
+.label.people {
+  font-style: italic;
+  font-weight: 500;
+  fill: var(--muted);
+  stroke: none;
+  letter-spacing: 0.03em;
 }
 .map-loading {
   position: absolute; inset: 0;
@@ -188,3 +198,13 @@ header {
   .tick:nth-child(odd) span { display: none; }
   .guess-readout { font-size: 28px; min-width: 0; }
 }
+.coast {
+  fill: none;
+  stroke: #3b2f22;
+  stroke-opacity: 0.6;
+  stroke-width: 0.7;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.bleed { stroke-width: 3; stroke-linejoin: round; pointer-events: none; }

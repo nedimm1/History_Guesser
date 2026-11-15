@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { posToYear, yearToPos, formatYear, TICKS } from './game'
+import { posToYear, yearToPos, formatYear, TICKS, MIN_YEAR, MAX_YEAR } from './game'
 
 export default function Timeline({ guess, onChange, actual, locked }) {
   const ref = useRef(null)
@@ -13,8 +13,8 @@ export default function Timeline({ guess, onChange, actual, locked }) {
   function onKey(e) {
     if (locked) return
     const step = e.shiftKey ? 50 : 10
-    if (e.key === 'ArrowLeft') onChange(Math.max(-3000, guess - step))
-    if (e.key === 'ArrowRight') onChange(Math.min(2010, guess + step))
+    if (e.key === 'ArrowLeft') onChange(Math.max(MIN_YEAR, guess - step))
+    if (e.key === 'ArrowRight') onChange(Math.min(MAX_YEAR, guess + step))
   }
 
   const pct = (y) => `${yearToPos(y) * 100}%`
@@ -26,8 +26,8 @@ export default function Timeline({ guess, onChange, actual, locked }) {
         className={`track ${locked ? 'locked' : ''}`}
         tabIndex={0}
         role="slider"
-        aria-valuemin={-3000}
-        aria-valuemax={2010}
+        aria-valuemin={MIN_YEAR}
+        aria-valuemax={MAX_YEAR}
         aria-valuenow={guess}
         aria-valuetext={formatYear(guess)}
         onKeyDown={onKey}
@@ -40,7 +40,7 @@ export default function Timeline({ guess, onChange, actual, locked }) {
         <div className="rail" />
         {TICKS.map((t) => (
           <div key={t} className="tick" style={{ left: pct(t) }}>
-            <span>{t < 0 ? `${-t} BC` : t === 0 ? '0' : t}</span>
+            <span>{t}</span>
           </div>
         ))}
         {actual !== undefined && (
