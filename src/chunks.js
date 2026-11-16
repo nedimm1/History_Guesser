@@ -7,6 +7,8 @@ export const MAX_YEAR = 2024
 // From this year on the borders come from OpenHistoricalMap (scripts/build-ohm.mjs) instead of
 // Cliopatria. It must be a chunk start.
 export const OHM_FROM = 2000
+// Flags are shown next to country names from this year on (scripts/build-flags.mjs).
+export const FLAGS_FROM = 1500
 
 export function chunkStart(year) {
   return year < 1700 ? Math.floor(year / 100) * 100 : 1700 + Math.floor((year - 1700) / 25) * 25

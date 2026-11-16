@@ -4,7 +4,8 @@ import { geoArea, geoContains, geoMercator, geoPath, geoGraticule10 } from 'd3-g
 import { feature, mesh } from 'topojson-client'
 import land50 from 'world-atlas/land-50m.json'
 import { ownerOf, assignColors, displayName } from './owners'
-import { chunkStart } from './chunks'
+import { chunkStart, FLAGS_FROM } from './chunks'
+import { citiesIn } from './cities'
 
 const W = 960
 const H = 540
@@ -14,6 +15,11 @@ const LAND = feature(land50, land50.objects.land)
 const GRATICULE = geoGraticule10()
 // Flat world view: Mercator from 56°S to 79°N fills a 16:9 frame exactly (Antarctica and the far Arctic are cropped).
 const WORLD_BBOX = [-180, -56, 180, 79]
+// How zoomed in a view is compared with the whole-world map, at which each rank of city appears.
+const WORLD_SCALE = geoMercator().fitExtent([[0, 0], [W, H]], { type: 'MultiPoint', coordinates: [[-180, -56], [180, 79]] }).scale()
+const CITY_ZOOM = { 1: 1, 2: 2, 3: 4.5 }
+const CITY_PX = { 1: 10, 2: 9, 3: 8.5 } // on-screen font size
+const CONTROLS = [50, 110] // map units the zoom buttons take from the bottom-right corner
 
 const corners = ([w, s, e, n]) => ({
   type: 'MultiPoint',
@@ -57,6 +63,8 @@ function clampView({ k, x, y }, [[x0, y0], [x1, y1]]) {
   k = Math.min(MAX_ZOOM, Math.max(1, k))
   return { k, x: clampAxis(x, x0, x1, k, W), y: clampAxis(y, y0, y1, k, H) }
 }
+
+const overlaps = (box, boxes) => boxes.some((b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])
 
 function zoomAt(v, k, [cx, cy], bounds) {
   k = Math.min(MAX_ZOOM, Math.max(1, k))
@@ -153,6 +161,22 @@ function nearbyTerritories(features) {
   return near.map((s) => [...s])
 }
 
+// Flags (built by scripts/build-flags.mjs): { flags: { id: aspect }, names: { name: [[from, to, id]] } }.
+let flagIndex = null
+function loadFlags() {
+  flagIndex ??= fetch(`${import.meta.env.BASE_URL}flags/index.json`)
+    .then((r) => (r.ok ? r.json() : { flags: {}, names: {} }))
+    .catch(() => ({ flags: {}, names: {} }))
+  return flagIndex
+}
+
+// The flag a territory flies in a year: { href, aspect } or null.
+function flagOf(index, name, year) {
+  if (!index || year < FLAGS_FROM) return null
+  const id = index.names[name]?.find(([a, b]) => a <= year && year <= b)?.[2]
+  return id ? { href: `${import.meta.env.BASE_URL}flags/${id}.png`, aspect: Math.min(2, Math.max(1, index.flags[id])) } : null
+}
+
 const yearCache = new Map()
 async function loadYear(year) {
   if (!yearCache.has(year)) {
@@ -202,6 +226,7 @@ export default function MapView({ year, region, bbox }) {
   const features = data?.features
   const [view, setView] = useState({ k: 1, x: 0, y: 0 })
   const [hover, setHover] = useState(null)
+  const [flags, setFlags] = useState(null)
   const drag = useRef(null)
   const svgRef = useRef(null)
 
@@ -214,6 +239,14 @@ export default function MapView({ year, region, bbox }) {
       alive = false
     }
   }, [year])
+
+  useEffect(() => {
+    let alive = true
+    loadFlags().then((f) => alive && setFlags(f))
+    return () => {
+      alive = false
+    }
+  }, [])
 
   useEffect(() => {
     if (!region || region === 'world') return
@@ -261,17 +294,34 @@ export default function MapView({ year, region, bbox }) {
         label: displayName(name),
         d: path(f),
         fill: colors[i],
+        flag: flagOf(flags, name, year),
         // The check that the point is really inside f catches shapes that wrap across the date line.
         anchors: labelPoints(f, proj, frame).filter((a) => inRegion(a.point) && geoContains(f, proj.invert(a.point))),
       }
     })
-  }, [features, data, path, bbox, regionMask, bounds])
+  }, [features, data, path, bbox, regionMask, bounds, flags, year])
+
+  // Cities of this year inside the region, in map coordinates.
+  const cities = useMemo(() => {
+    const proj = path.projection()
+    // Port cities can sit just off the region's 1:50m coastline (New York), so a near miss counts.
+    const NEAR = [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3]]
+    const inRegion = (c) =>
+      regionMask
+        ? NEAR.some(([dx, dy]) => geoContains(regionMask, [c.lon + dx, c.lat + dy]))
+        : !bbox || inBox([c.lon, c.lat], bbox)
+    return citiesIn(year)
+      .filter(inRegion)
+      .map((c) => ({ ...c, point: proj([c.lon, c.lat]) }))
+      .filter(({ point: p }) => p && p[0] >= bounds[0][0] && p[0] <= bounds[1][0] && p[1] >= bounds[0][1] && p[1] <= bounds[1][1])
+  }, [year, path, bbox, regionMask, bounds])
+  const zoom = (path.projection().scale() / WORLD_SCALE) * view.k
 
   // Every territory gets a label, biggest first. Labels that would overlap a bigger one at the
   // current zoom wait until you zoom in; hovering always shows the name.
   const labels = useMemo(() => {
     const candidates = shapes
-      .flatMap((s) => s.anchors.map((a, j) => ({ key: `${s.id}-${j}`, text: s.label, ...a })))
+      .flatMap((s) => s.anchors.map((a, j) => ({ key: `${s.id}-${j}`, text: s.label, flag: s.flag, ...a })))
       .sort((a, b) => b.area - a.area)
     const placed = []
     const byText = new Map() // where each name is already shown, so repeats stay well apart
@@ -283,16 +333,54 @@ export default function MapView({ year, region, bbox }) {
       if (seen.some(([sx, sy]) => Math.hypot(sx - x, sy - y) < apart)) continue
       const px = Math.min(15, Math.max(7, 5 + (Math.sqrt(c.area) * view.k) / 14)) // on-screen font size
       const size = px / view.k
-      const w = c.text.length * size * 0.5 + size * 0.4
+      const textW = c.text.length * size * 0.5 + size * 0.4
+      // A flag sits left of the name; the pair is centred on the label point.
+      const flagH = size * 0.8
+      const flagW = c.flag ? flagH * c.flag.aspect : 0
+      const gap = c.flag ? size * 0.3 : 0
+      const w = textW + flagW + gap
       const h = size * 1.15
       const box = [x - w / 2, y - h / 2, x + w / 2, y + h / 2]
-      if (placed.some((b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])) continue
+      if (overlaps(box, placed)) continue
       placed.push(box)
       byText.set(c.text, [...seen, [x, y]])
-      out.push({ ...c, size })
+      out.push({
+        ...c,
+        size,
+        textX: x + (flagW + gap) / 2,
+        flagBox: c.flag && { x: x - w / 2, y: y - flagH / 2 - size * 0.05, w: flagW, h: flagH },
+      })
     }
-    return out
-  }, [shapes, view.k])
+
+    // Then the cities, most important first, wherever they don't cover a country's name: the name
+    // goes right of the dot, else left, above or below, whichever fits on the visible map.
+    const visible = [-view.x / view.k, -view.y / view.k, (W - view.x) / view.k, (H - view.y) / view.k]
+    // The zoom buttons cover the bottom-right corner.
+    const toMap = (sx, sy) => [(sx - view.x) / view.k, (sy - view.y) / view.k]
+    placed.push([...toMap(W - CONTROLS[0], H - CONTROLS[1]), ...toMap(W, H)])
+    const shown = []
+    for (const c of [...cities].sort((a, b) => a.rank - b.rank)) {
+      if (zoom < CITY_ZOOM[c.rank]) continue
+      const size = CITY_PX[c.rank] / view.k
+      const r = (c.rank === 1 ? 2.4 : 1.9) / view.k
+      const [x, y] = c.point
+      const tw = c.name.length * size * (c.rank === 1 ? 0.62 : 0.58)
+      const pad = r + size * 0.35
+      const h = size * 0.6
+      const spots = [
+        { anchor: 'start', tx: x + pad, ty: y, box: [x - r, y - h, x + pad + tw, y + h] },
+        { anchor: 'end', tx: x - pad, ty: y, box: [x - pad - tw, y - h, x + r, y + h] },
+        { anchor: 'middle', tx: x, ty: y - pad - h, box: [x - tw / 2, y - pad - 2 * h, x + tw / 2, y + r] },
+        { anchor: 'middle', tx: x, ty: y + pad + h, box: [x - tw / 2, y - r, x + tw / 2, y + pad + 2 * h] },
+      ]
+      const inView = ([x0, y0, x1, y1]) => x0 >= visible[0] && x1 <= visible[2] && y0 >= visible[1] && y1 <= visible[3]
+      const spot = spots.find((p) => inView(p.box) && !overlaps(p.box, placed))
+      if (!spot) continue
+      placed.push(spot.box)
+      shown.push({ ...c, size, r, ...spot })
+    }
+    return { countries: out, cities: shown }
+  }, [shapes, cities, view, zoom])
 
   // --- pan & zoom ---
   function toSvg(e) {
@@ -372,23 +460,36 @@ export default function MapView({ year, region, bbox }) {
           {data && <path d={path(data.borders)} className="borders" />}
           </g>
           <path d={landPath} className="coast" />
-          {labels.map((s) => (
-            <text
-              key={s.key}
-              x={s.point[0]}
-              y={s.point[1]}
-              className="label"
-              style={{ fontSize: s.size, strokeWidth: s.size * 0.22 }}
-            >
-              {s.text}
-            </text>
+          {labels.cities.map((c) => (
+            <g key={`c-${c.name}`} className={`city rank${c.rank}`}>
+              <circle cx={c.point[0]} cy={c.point[1]} r={c.r} />
+              <text x={c.tx} y={c.ty} textAnchor={c.anchor} style={{ fontSize: c.size, strokeWidth: c.size * 0.25 }}>
+                {c.name}
+              </text>
+            </g>
+          ))}
+          {labels.countries.map((s) => (
+            <g key={s.key}>
+              {s.flagBox && (
+                <>
+                  <image href={s.flag.href} x={s.flagBox.x} y={s.flagBox.y} width={s.flagBox.w} height={s.flagBox.h} preserveAspectRatio="none" />
+                  <rect x={s.flagBox.x} y={s.flagBox.y} width={s.flagBox.w} height={s.flagBox.h} className="flag-edge" />
+                </>
+              )}
+              <text x={s.textX} y={s.point[1]} className="label" style={{ fontSize: s.size, strokeWidth: s.size * 0.22 }}>
+                {s.text}
+              </text>
+            </g>
           ))}
         </g>
         <rect width={W} height={H} filter="url(#paper)" fill="transparent" pointerEvents="none" />
       </svg>
       {(!features || !maskReady) && <div className="map-loading">Unrolling the map…</div>}
       {hover !== null && shapes[hover]?.name && (
-        <div className="tooltip">{shapes[hover].name}</div>
+        <div className="tooltip">
+          {shapes[hover].flag && <img src={shapes[hover].flag.href} alt="" className="tooltip-flag" />}
+          {shapes[hover].name}
+        </div>
       )}
       <div className="map-controls">
         <button onClick={() => setView((v) => zoomAt(v, v.k * 1.5, [W / 2, H / 2], bounds))}>+</button>

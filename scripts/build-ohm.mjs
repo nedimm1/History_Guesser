@@ -31,6 +31,16 @@ const DATES = [
   ['Transitional Islamic State of Afghanistan', 'start_date', '2001-12-22'], // the interim government took over in December 2001
 ]
 
+// Wikidata IDs for the countries OHM has none for (scripts/build-flags.mjs finds flags by them).
+const WIKIDATA = {
+  'United Kingdom': 'Q145', Mongolia: 'Q711', Tajikistan: 'Q863', Uzbekistan: 'Q265', Kyrgyzstan: 'Q813',
+  Laos: 'Q819', Pakistan: 'Q843', Sudan: 'Q1049', Maldives: 'Q826', Ethiopia: 'Q115', Somalia: 'Q1045',
+  Eritrea: 'Q986', Honduras: 'Q783', Afghanistan: 'Q889', 'Islamic Republic of Afghanistan': 'Q889',
+  'Transitional Islamic State of Afghanistan': 'Q889', 'Islamic Emirate of Afghanistan': 'Q427941',
+  Kuwait: 'Q817', Syria: 'Q858', Guatemala: 'Q774', Malaysia: 'Q833', Cambodia: 'Q424',
+  'Guinea-Bissau': 'Q1007', Nicaragua: 'Q811',
+}
+
 // Dependencies OHM maps as countries of their own; MemberOf gives them their ruler's colour.
 const RULERS = {
   'United Kingdom': [
@@ -100,7 +110,7 @@ for (const f of osmtogeojson(osm, { flatProperties: true }).features) {
   g.coordinates = g.type === 'Polygon' ? rewind(g.coordinates) : g.coordinates.map(rewind)
   // A relation that is really a border line assembles into a near-global polygon.
   if (geoArea(g) > 4 * Math.PI * 0.08) continue
-  features.push({ type: 'Feature', properties: { Name: name, FromYear, ToYear, MemberOf: ruler.get(name) ?? null }, geometry: g })
+  features.push({ type: 'Feature', properties: { Name: name, FromYear, ToYear, MemberOf: ruler.get(name) ?? null, Wikidata: p.wikidata || WIKIDATA[name] || null }, geometry: g })
 }
 
 // Where two countries claim the same land (Ukraine keeps Crimea in OHM after Russia's 2014

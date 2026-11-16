@@ -13,7 +13,10 @@ npm run dev
 - `src/Timeline.jsx`: non-linear year slider (more room for recent centuries)
 - `src/game.js`: regions, year picking (any year; two rounds in three from 1700 on), scoring (`5000·e^(−yearsOff / tolerance)`, more forgiving for older maps) and timeline mapping
 - `src/owners.js`: colours, so colonies and fiefs share their empire's colour and neighbours never look alike
-- `src/chunks.js`: how the border data is split into files
+- `src/chunks.js`: how the border data is split into files, and the years where sources and flags start
+- `src/cities.js`: the cities on the map, with the name each had at the time (Byzantium → Constantinople → Istanbul) and how far you must zoom in to see them
+- `src/MapViewer.jsx`: dev-only map viewer (`?viewer`): type a year, see its map
+- `public/flags/`: flag thumbnails and `index.json` (which territory flies which flag in which years)
 - `public/data/<start>.json`: border data (TopoJSON), one file per century before 1700 and per 25 years after (2000.json is OpenHistoricalMap's)
 
 While running `npm run dev`, add `?year=1815` to the URL to make the first round that year.
@@ -29,8 +32,21 @@ To rebuild the border data (each downloads its source into `data-src/` on first 
 ```sh
 npm run data:history   # Cliopatria, AD 1–1999
 npm run data:modern    # OpenHistoricalMap, 2000–2024 (public/data/2000.json)
+npm run data:flags     # flags, from the two above (public/flags/)
 ```
 The Cliopatria script corrects a few outdated names in its newest rows (see `RENAMES`); the OHM one skips a few bogus test entries, fills two date gaps and gives overseas territories their ruler's colour (see `SKIP`, `DATES`, `RULERS`). Where the switch happens is `OHM_FROM` in `src/chunks.js`.
+
+## Flags
+From 1500 on, countries show their flag next to their name. Run `npm run data:flags` after rebuilding the border data. For each territory and year it takes the first of:
+1. a hand-checked timeline in `scripts/flag-table.mjs` (`NAME_FLAGS`),
+2. the timeline of the big power it is (`POWER_FLAGS`: England → Great Britain → United Kingdom, …),
+3. its Wikidata flag for that year, if Wikidata dates it (undated flags only for states founded after 1945, since an undated flag is usually today's),
+4. its ruling power's flag, for colonies.
+
+Only images that Wikimedia Commons marks public domain or CC0 are used; the rest (often share-alike redrawings) are skipped and listed in `data-src/flags-report.txt`, together with every territory's flags, for checking. Nazi-era flags are never shown (`BLOCKED_FILES`). States with no real national flag (Ming China, the Mughals) get none. Wrong flags are fixed by adding a line to `NAME_FLAGS`.
+
+## Cities
+`src/cities.js` is hand-written: about 245 cities with their location, the years they existed and the name in use in each period. Each name has a rank: 1 shows on the world map, 2 and 3 as you zoom in. City names never cover country names; they're placed around the dot wherever there's room.
 
 When you pick a region (Europe, Asia, …), only the territories inside it are coloured and the rest of the world stays blank. The region shapes in `public/regions/<key>.json` are built from Natural Earth's 1:50m countries with:
 ```sh

@@ -8,7 +8,8 @@
 // FromYear–ToYear contains the year being played. public/data/index.json lists the chunks.
 //
 // Only real territories are kept: the "(British Empire)"-style rows that outline a whole empire
-// are dropped, and each territory keeps MemberOf (its empire) so colonies get their ruler's colour.
+// are dropped, and each territory keeps MemberOf (its empire) so colonies get their ruler's colour,
+// and its Wikidata ID, which scripts/build-flags.mjs uses to find its flag.
 //
 // Chunks from OHM_FROM on come from OpenHistoricalMap instead (scripts/build-ohm.mjs); this script
 // leaves them alone.
@@ -51,7 +52,7 @@ const src = await source()
 const base = `${SRC_DIR}/territories.json`
 await mapshaper.runCommands(
   `-i ${src} -filter 'Type === "POLITY" && Name[0] !== "(" && ToYear >= ${MIN_YEAR} && FromYear <= ${MAX_YEAR}' ` +
-    `-filter-fields Name,FromYear,ToYear,MemberOf -o ${base} format=geojson`,
+    `-filter-fields Name,FromYear,ToYear,MemberOf,Wikidata -o ${base} format=geojson`,
 )
 
 const territories = JSON.parse(fs.readFileSync(base))

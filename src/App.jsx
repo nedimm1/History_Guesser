@@ -156,7 +156,8 @@ function Credits() {
       History Databank,{' '}
       <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> (simplified and recoloured);
       from 2000, <a href="https://www.openhistoricalmap.org">OpenHistoricalMap</a>.
-      Coastlines: <a href="https://www.naturalearthdata.com">Natural Earth</a>.
+      Flags: <a href="https://commons.wikimedia.org">Wikimedia Commons</a> (public domain), chosen with{' '}
+      <a href="https://www.wikidata.org">Wikidata</a>. Coastlines: <a href="https://www.naturalearthdata.com">Natural Earth</a>.
     </p>
   )
 }

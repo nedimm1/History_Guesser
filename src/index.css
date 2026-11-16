@@ -131,6 +131,21 @@ header {
   pointer-events: none;
   vector-effect: non-scaling-stroke;
 }
+.flag-edge { fill: none; stroke: #2a2016; stroke-opacity: 0.45; stroke-width: 0.5px; vector-effect: non-scaling-stroke; pointer-events: none; }
+.city { pointer-events: none; }
+.city circle { fill: #2a2016; stroke: rgba(255, 250, 238, 0.85); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.city text {
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-weight: 500;
+  fill: #2a2016;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: rgba(255, 250, 238, 0.8);
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.city.rank1 text { font-weight: 650; }
+.tooltip-flag { height: 14px; margin-right: 8px; vertical-align: -2px; border: 1px solid var(--line); }
 .map-loading {
   position: absolute; inset: 0;
   display: grid; place-items: center;
