@@ -1,30 +1,42 @@
-import yearsData from './years.json'
+import { MIN_YEAR, MAX_YEAR } from './chunks'
 
-export const ALL_YEARS = yearsData.years
+export { MIN_YEAR, MAX_YEAR }
 export const ROUNDS = 5
 export const MAX_POINTS = 5000
-export const MIN_YEAR = 1 // the game covers the Common Era; the earliest map is 1 BC
-export const MAX_YEAR = 2010
 
-// [west, south, east, north] in degrees
+// [west, south, east, north] in degrees. minYear: the earliest round for that region (the
+// Americas have few states in the data before the Aztec and Inca empires).
 export const REGIONS = {
-  world: { label: 'Whole World', bbox: null, minYear: -1 },
-  europe: { label: 'Europe & Mediterranean', bbox: [-12, 25, 50, 62], minYear: -1 },
-  mideast: { label: 'Africa & Middle East', bbox: [-20, -36, 65, 42], minYear: -1 },
-  asia: { label: 'Asia', bbox: [45, -10, 150, 58], minYear: -1 },
-  americas: { label: 'The Americas', bbox: [-170, -56, -30, 72], minYear: 500 },
+  world: { label: 'Whole World', bbox: null, minYear: MIN_YEAR },
+  europe: { label: 'Europe & Mediterranean', bbox: [-12, 25, 50, 62], minYear: MIN_YEAR },
+  mideast: { label: 'Africa & Middle East', bbox: [-20, -36, 65, 42], minYear: MIN_YEAR },
+  asia: { label: 'Asia', bbox: [45, -10, 150, 58], minYear: MIN_YEAR },
+  americas: { label: 'The Americas', bbox: [-170, -56, -30, 72], minYear: 1400 },
 }
 
+// Any year can come up. Two rounds in three are from 1700 on, and the rest from earlier.
+export const RECENT_FROM = 1700
+const RECENT_SHARE = 2 / 3
+const MIN_GAP = 20 // rounds in one game are at least this many years apart
+
+const randomInt = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1))
+
+// Draws n years for a game, in the order they'll be played.
 export function pickYears(regionKey, n = ROUNDS) {
-  const pool = ALL_YEARS.filter((y) => y >= REGIONS[regionKey].minYear)
-  const shuffled = [...pool].sort(() => Math.random() - 0.5)
-  return shuffled.slice(0, n)
+  const lo = REGIONS[regionKey].minYear
+  const recentLo = Math.max(lo, RECENT_FROM)
+  const picked = []
+  for (let tries = 0; picked.length < n && tries < 1000; tries++) {
+    const recent = lo >= RECENT_FROM || Math.random() < RECENT_SHARE
+    const y = recent ? randomInt(recentLo, MAX_YEAR) : randomInt(lo, RECENT_FROM - 1)
+    if (picked.every((p) => Math.abs(p - y) >= MIN_GAP)) picked.push(y)
+  }
+  return picked
 }
 
 export function formatYear(y) {
   y = Math.round(y)
   if (y < 0) return `${-y} BC`
-  if (y === 0) return '1 BC'
   return `AD ${y}`
 }
 
@@ -49,7 +61,7 @@ const ANCHORS = [
   [0.65, 1500],
   [0.8, 1800],
   [0.9, 1900],
-  [1, 2010],
+  [1, MAX_YEAR],
 ]
 
 export function posToYear(t) {

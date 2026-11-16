@@ -107,7 +107,6 @@ header {
 .ocean { fill: var(--ocean); }
 .graticule { fill: none; stroke: var(--ink); stroke-opacity: 0.07; vector-effect: non-scaling-stroke; }
 .land { fill: var(--land); }
-.unclaimed { fill: var(--land); stroke: none; }
 .polity { stroke: none; }
 .polity.hover { filter: brightness(1.1); stroke: #3b2f22; stroke-width: 1.4; stroke-opacity: 0.9; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .borders {
@@ -131,14 +130,6 @@ header {
   stroke-linejoin: round;
   pointer-events: none;
   vector-effect: non-scaling-stroke;
-}
-/* Peoples, tribes and cultures: not states, so quieter than state names. */
-.label.people {
-  font-style: italic;
-  font-weight: 500;
-  fill: var(--muted);
-  stroke: none;
-  letter-spacing: 0.03em;
 }
 .map-loading {
   position: absolute; inset: 0;
@@ -208,3 +199,18 @@ header {
   pointer-events: none;
 }
 .bleed { stroke-width: 3; stroke-linejoin: round; pointer-events: none; }
+
+.credits { margin-top: 40px; line-height: 1.5; }
+.credits a { color: inherit; }
+
+/* Dev-only map viewer (src/MapViewer.jsx) */
+.viewer-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.viewer-controls button { padding: 8px 12px; }
+.viewer-controls input, .viewer-controls select {
+  font: inherit; font-size: 18px; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card); color: var(--ink);
+}
+.viewer-controls input { width: 6.5em; font-weight: 600; text-align: center; }
+.viewer-controls input.invalid { border-color: var(--accent); }
+.viewer-slider { width: 100%; margin: 4px 0 12px; accent-color: var(--accent); }
+.viewer .stats a { color: var(--ink); }

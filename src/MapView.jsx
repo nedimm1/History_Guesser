@@ -3,7 +3,8 @@ import polylabel from 'polylabel'
 import { geoArea, geoContains, geoMercator, geoPath, geoGraticule10 } from 'd3-geo'
 import { feature, mesh } from 'topojson-client'
 import land50 from 'world-atlas/land-50m.json'
-import { ownerOf, colorForOwner, displayName } from './owners'
+import { ownerOf, assignColors, displayName } from './owners'
+import { chunkStart } from './chunks'
 
 const W = 960
 const H = 540
@@ -115,32 +116,66 @@ function labelPoints(f, proj, frame) {
     .filter(({ point }) => Number.isFinite(point[0]))
 }
 
-// Peoples, tribes and cultures (tagged KIND: "people" by scripts/mark-peoples.mjs) aren't states:
-// they're drawn without colour or borders, and only labelled when there's plenty of room.
-const isPeople = (props) => props?.KIND === 'people'
-const isState = (g) => !!(g.properties?.NAME || '').trim() && !isPeople(g.properties)
-const PEOPLE_LABEL_MIN_AREA = 2500 // on-screen px² (about 50×50) before a people gets a label
-
-const cache = new Map()
-async function loadYear(year) {
-  if (!cache.has(year)) {
-    const url = `${import.meta.env.BASE_URL}data/${year}.json`
-    cache.set(
-      year,
-      fetch(url)
-        .then((r) => r.json())
-        .then((topo) => {
-          const fc = feature(topo, topo.objects.borders)
-          return {
-            features: fc.features.filter((f) => f.geometry).map(fixWinding),
-            // Only lines shared by two polities: the shores come from the real coastline instead.
-            // Only lines with a state on at least one side: peoples and unclaimed land run together.
-            borders: mesh(topo, topo.objects.borders, (a, b) => a !== b && (isState(a) || isState(b))),
-          }
-        }),
+// Border data comes in chunks (see src/chunks.js); each holds every territory alive at some point
+// in its span, with the years it existed. A year's map is the rows whose FromYear–ToYear contain it.
+const chunkCache = new Map()
+function loadChunk(start) {
+  if (!chunkCache.has(start)) {
+    chunkCache.set(
+      start,
+      fetch(`${import.meta.env.BASE_URL}data/${start}.json`).then((r) => r.json()),
     )
   }
-  return cache.get(year)
+  return chunkCache.get(start)
+}
+
+// Which territories border each other, for picking neighbour colours that differ: two count as
+// neighbours when their outlines pass through the same 1° grid cell. (Shared arcs alone miss many
+// pairs, since neighbouring territories in the data are often traced separately.)
+function nearbyTerritories(features) {
+  const cells = new Map()
+  features.forEach((f, i) => {
+    const g = f.geometry
+    const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates
+    for (const poly of polys)
+      for (const ring of poly)
+        for (const [lon, lat] of ring) {
+          const key = `${Math.floor(lon)},${Math.floor(lat)}`
+          if (!cells.has(key)) cells.set(key, new Set())
+          cells.get(key).add(i)
+        }
+  })
+  const near = features.map(() => new Set())
+  for (const ids of cells.values()) {
+    if (ids.size < 2) continue
+    for (const a of ids) for (const b of ids) if (a !== b) near[a].add(b)
+  }
+  return near.map((s) => [...s])
+}
+
+const yearCache = new Map()
+async function loadYear(year) {
+  if (!yearCache.has(year)) {
+    yearCache.set(
+      year,
+      loadChunk(chunkStart(year)).then((topo) => {
+        const alive = {
+          type: 'GeometryCollection',
+          geometries: topo.objects.borders.geometries.filter(
+            (g) => g.type && g.properties.FromYear <= year && g.properties.ToYear >= year,
+          ),
+        }
+        const features = feature(topo, alive).features.map(fixWinding)
+        return {
+          features,
+          neighbours: nearbyTerritories(features),
+          // Only lines shared by two territories: the shores come from the real coastline instead.
+          borders: mesh(topo, alive, (a, b) => a !== b),
+        }
+      }),
+    )
+  }
+  return yearCache.get(year)
 }
 
 // Land mask of a game region (built by scripts/build-regions.mjs): only polities inside it are drawn.
@@ -213,8 +248,9 @@ export default function MapView({ year, region, bbox }) {
       [Math.max(0, bounds[0][0]), Math.max(0, bounds[0][1])],
       [Math.min(W, bounds[1][0]), Math.min(H, bounds[1][1])],
     ]
+    const colors = assignColors(features.map((f) => ownerOf(f.properties)), data.neighbours)
     return features.map((f, i) => {
-      const name = (f.properties.NAME || '').trim()
+      const name = (f.properties.Name || '').trim()
       const inRegion = (pt) => {
         const geo = proj.invert(pt)
         return !!geo && (regionMask ? geoContains(regionMask, geo) : !bbox || inBox(geo, bbox))
@@ -223,29 +259,20 @@ export default function MapView({ year, region, bbox }) {
         id: i,
         name,
         label: displayName(name),
-        people: isPeople(f.properties),
         d: path(f),
-        fill: name && !isPeople(f.properties) ? colorForOwner(ownerOf(f.properties, year)) : null,
+        fill: colors[i],
         // The check that the point is really inside f catches shapes that wrap across the date line.
-        anchors: name
-          ? labelPoints(f, proj, frame).filter((a) => inRegion(a.point) && geoContains(f, proj.invert(a.point)))
-          : [],
+        anchors: labelPoints(f, proj, frame).filter((a) => inRegion(a.point) && geoContains(f, proj.invert(a.point))),
       }
     })
-  }, [features, path, bbox, regionMask, year, bounds])
+  }, [features, data, path, bbox, regionMask, bounds])
 
-  // Unclaimed land and peoples first, states on top: the source data has some overlapping shapes,
-  // and a people's plain fill must never hide a state underneath it.
-  const drawOrder = useMemo(() => [...shapes].sort((a, b) => !!a.fill - !!b.fill), [shapes])
-
-  // Every state gets a label, biggest first. Labels that would overlap a bigger one at the current
-  // zoom wait until you zoom in; hovering always shows the name. Peoples come after all states, and
-  // only where they cover a large area on screen.
+  // Every territory gets a label, biggest first. Labels that would overlap a bigger one at the
+  // current zoom wait until you zoom in; hovering always shows the name.
   const labels = useMemo(() => {
     const candidates = shapes
-      .flatMap((s) => s.anchors.map((a, j) => ({ key: `${s.id}-${j}`, text: s.label, people: s.people, ...a })))
-      .filter((c) => !c.people || c.area * view.k ** 2 >= PEOPLE_LABEL_MIN_AREA)
-      .sort((a, b) => a.people - b.people || b.area - a.area)
+      .flatMap((s) => s.anchors.map((a, j) => ({ key: `${s.id}-${j}`, text: s.label, ...a })))
+      .sort((a, b) => b.area - a.area)
     const placed = []
     const byText = new Map() // where each name is already shown, so repeats stay well apart
     const out = []
@@ -254,9 +281,7 @@ export default function MapView({ year, region, bbox }) {
       const [x, y] = c.point
       const seen = byText.get(c.text) || []
       if (seen.some(([sx, sy]) => Math.hypot(sx - x, sy - y) < apart)) continue
-      const px = c.people
-        ? Math.min(11, Math.max(7, 4 + (Math.sqrt(c.area) * view.k) / 20))
-        : Math.min(15, Math.max(7, 5 + (Math.sqrt(c.area) * view.k) / 14)) // on-screen font size
+      const px = Math.min(15, Math.max(7, 5 + (Math.sqrt(c.area) * view.k) / 14)) // on-screen font size
       const size = px / view.k
       const w = c.text.length * size * 0.5 + size * 0.4
       const h = size * 1.15
@@ -331,15 +356,15 @@ export default function MapView({ year, region, bbox }) {
           <g clipPath="url(#land-clip)" visibility={maskReady ? "visible" : "hidden"}>
           {/* Bleed: the historical shapes don't hug the real coastline exactly, so each polity
               gets a wide stroke in its own colour underneath to fill the gaps up to the shore. */}
-          {shapes.map((s) =>
-            s.fill ? <path key={`b${s.id}`} d={s.d} fill={s.fill} stroke={s.fill} className="bleed" /> : null,
-          )}
-          {drawOrder.map((s) => (
+          {shapes.map((s) => (
+            <path key={`b${s.id}`} d={s.d} fill={s.fill} stroke={s.fill} className="bleed" />
+          ))}
+          {shapes.map((s) => (
             <path
               key={s.id}
               d={s.d}
-              fill={s.fill || undefined}
-              className={s.fill ? `polity ${hover === s.id ? 'hover' : ''}` : 'unclaimed'}
+              fill={s.fill}
+              className={`polity ${hover === s.id ? 'hover' : ''}`}
               onPointerEnter={() => setHover(s.id)}
               onPointerLeave={() => setHover((h) => (h === s.id ? null : h))}
             />
@@ -352,7 +377,7 @@ export default function MapView({ year, region, bbox }) {
               key={s.key}
               x={s.point[0]}
               y={s.point[1]}
-              className={s.people ? 'label people' : 'label'}
+              className="label"
               style={{ fontSize: s.size, strokeWidth: s.size * 0.22 }}
             >
               {s.text}

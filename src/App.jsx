@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import MapView, { preloadYear } from './MapView'
 import Timeline from './Timeline'
 import {
-  REGIONS, ROUNDS, MAX_POINTS,
+  REGIONS, ROUNDS, MAX_POINTS, MIN_YEAR, MAX_YEAR,
   pickYears, scoreGuess, formatYear, rating,
 } from './game'
 
@@ -23,6 +23,9 @@ export default function App() {
 
   function start(regionKey) {
     const ys = pickYears(regionKey)
+    // Dev only: ?year=1815 makes the first round that year, for checking a particular map.
+    const forced = import.meta.env.DEV && Number(new URLSearchParams(location.search).get('year'))
+    if (forced) ys[0] = forced
     ys.forEach((y, i) => i < 2 && preloadYear(y))
     setRegion(regionKey)
     setYears(ys)
@@ -61,8 +64,10 @@ export default function App() {
           ))}
         </div>
         <p className="fine">
-          {ROUNDS} rounds · up to {MAX_POINTS.toLocaleString()} points each · AD 1 – 2010
+          {ROUNDS} rounds · up to {MAX_POINTS.toLocaleString()} points each · AD {MIN_YEAR} – {MAX_YEAR}
         </p>
+        <Credits />
+        {import.meta.env.DEV && <p className="fine"><a href="?viewer">Map viewer</a> (dev only)</p>}
       </div>
     )
   }
@@ -138,5 +143,20 @@ export default function App() {
         {!revealed && <p className="fine">Drag the timeline or use ← → (Shift for big steps). Scroll the map to zoom in on smaller states.</p>}
       </section>
     </div>
+  )
+}
+
+// Required by the data licences (Cliopatria is CC BY 4.0: credit, licence link, note of changes).
+// OpenHistoricalMap is CC0 and needs no credit, but gets one anyway.
+function Credits() {
+  return (
+    <p className="fine credits">
+      Borders:{' '}
+      <a href="https://github.com/Seshat-Global-History-Databank/cliopatria">Cliopatria</a>, Seshat Global
+      History Databank,{' '}
+      <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> (simplified and recoloured);
+      from 2000, <a href="https://www.openhistoricalmap.org">OpenHistoricalMap</a>.
+      Coastlines: <a href="https://www.naturalearthdata.com">Natural Earth</a>.
+    </p>
   )
 }

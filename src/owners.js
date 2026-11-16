@@ -1,141 +1,43 @@
-// Works out who actually rules a territory, so colonies, protectorates and dominions get their
-// ruler's colour (British Raj and Nigeria are painted like the United Kingdom, for example). The
+// Colours territories by who rules them, so colonies and fiefs share their ruler's colour (the
+// British Raj and British Africa are painted like Britain, the Duchy of Burgundy like France). The
 // hover name and the map labels still show the territory's own name.
 //
-// The source data records the ruler in SUBJECTO, but it spells the same power many ways ("UK",
-// "Great Britain", "United Kingdom of Great Britain and Ireland", …) and often leaves it empty for
-// colonies such as "French Guiana" or "German South-West Africa". This file evens that out.
+// Cliopatria records the empire a territory belongs to in MemberOf ("(British Empire)",
+// "(Kingdom of France)"), and names some colonies after their ruler ("German Africa", "Belgian
+// Congo"). Both are matched against the big powers below, which keep one fixed colour through all
+// their names (Kingdom of England → United Kingdom, Tsardom of Russia → Soviet Union, …).
 
-// Every spelling of a power, mapped to one canonical name.
-const ALIASES = {
-  'United Kingdom': [
-    'UK', 'Great Britain', 'United Kingdom of Great Britain and Ireland', 'England', 'England and Ireland',
-    'English territory', 'British Empire', 'British East India Company',
-  ],
-  France: ['Kingdom of France', 'French Republic'],
-  Spain: ['Spanish Habsburg'],
-  Netherlands: ['Neterlands', 'Dutch Republic', 'United Kingdom of Netherlands'],
-  Denmark: ['Danemark', 'Denmark-Norway'],
-  Sweden: ['Sweden–Norway'],
-  Austria: ['Austrian Empire', 'Habsburg Austria', 'Austria Hungary', 'Austria-Hungary'],
-  Germany: ['German Empire'],
-  Italy: ['Kingdom of Italy'],
-  Russia: ['Russian Empire', 'USSR'],
-  'United States': ['USA', 'United States of America'],
-  Japan: ['Imperial Japan', 'Empire of Japan'],
-  'Ottoman Empire': ['Ottoman Sultanate'],
-  Turkey: ['Republic of Turkey'],
-  'Qing Empire': ['Manchu Empire'],
-  Persia: ['Persi'],
-}
-
-const CANONICAL = new Map()
-for (const [name, variants] of Object.entries(ALIASES)) {
-  CANONICAL.set(name, name)
-  for (const v of variants) CANONICAL.set(v, name)
-}
-const canonical = (name) => CANONICAL.get(name) ?? name
-
-// Colonies whose ruler is only given in their name: "French Guiana", "Madagascar (France)", "Gold Coast (GB)".
-const NAME_HINTS = [
-  [/\bBritish\b|\((GB|UK|Britain)\)/, 'United Kingdom'],
-  [/\bFrench\b|\((France|FR)\)/, 'France'],
-  [/\bSpanish\b|\(Spain\)/, 'Spain'],
-  [/\bPortuguese\b|\(Portugal\)/, 'Portugal'],
-  [/\bDutch\b|^Netherlands (Antilles|Indies)|\(Dutch\)|\(Netherlands\)/, 'Netherlands'],
-  [/\bGerman\b/, 'Germany'],
-  [/\bItalian\b/, 'Italy'],
-  [/\bBelgian\b/, 'Belgium'],
-  [/\bDanish\b|\(Denmark\)|\(Danemark\)/, 'Denmark'],
-  [/\bJapanese\b|\(Japan\)/, 'Japan'],
-  [/\bRussian\b|\(RU\)/, 'Russia'],
-  [/^United States\b|\(USA\)/, 'United States'],
-  [/\(Indian princely state\)/, 'United Kingdom'], // bound to the East India Company by treaty
+// [power, pattern]. The first match wins, so more specific patterns come first.
+const POWERS = [
+  ['United States', /^United States of America$/],
+  ['United Kingdom', /\bBritish\b|\bBritain\b|\bEngland\b|\bEnglish\b|United Kingdom of Great Britain|Commonwealth of Nations/],
+  ['France', /\bFrench\b|\bFrance\b|Bourbon Kingdom|Vichy/],
+  ['Spain', /\bSpanish\b|\bSpain\b|\bCastile\b/],
+  ['Portugal', /\bPortug/],
+  ['Netherlands', /\bDutch\b|\bNetherland|\bBatavian\b/],
+  ['Belgium', /\bBelgi/],
+  ['Germany', /\bGerman\b|\bGermany\b|\bPrussia\b|\bNazi\b/],
+  ['Austria', /\bAustria|Habsburg Monarchy/],
+  ['Italy', /\bItaly\b|\bItalian\b/],
+  ['Denmark', /\bDanish\b|\bDenmark\b/],
+  ['Sweden', /\bSwed/],
+  ['Russia', /\bRussia|\bSoviet\b|\bMuscov/],
+  ['Japan', /\bJapan\b|\bTokugawa\b/],
+  ['Ottoman Empire', /\bOttoman\b/],
 ]
 
-const SELF = '' // marks a territory as independent, whatever the source data says
+const powerOf = (name) => POWERS.find(([, re]) => re.test(name))?.[0] ?? null
 
-// Colonies the source data names without saying who ruled them (or names the wrong ruler):
-// [ruler, from, to, territory names]. Years are inclusive; dominions count as British until the
-// Statute of Westminster (1931), mandates until independence.
-const RULED = [
-  ['United Kingdom', 1763, 1930, ['Canada']],
-  ['United Kingdom', 1788, 1930, ['Australia']],
-  ['United Kingdom', 1840, 1930, ['New Zealand']],
-  ['United Kingdom', 1858, 1946, ['India']],
-  ['United Kingdom', 1796, 1947, ['Ceylon', 'Sri Lanka']],
-  ['United Kingdom', 1886, 1947, ['Burma']],
-  ['United Kingdom', 1874, 1956, ['Malaya', 'Malaysia']],
-  ['United Kingdom', 1655, 1961, ['Jamaica']],
-  ['United Kingdom', 1882, 1921, ['Egypt']],
-  ['United Kingdom', 1899, 1955, ['Sudan']],
-  ['United Kingdom', 1894, 1961, ['Uganda']],
-  ['United Kingdom', 1895, 1962, ['Kenya']],
-  ['United Kingdom', 1900, 1959, ['Nigeria']],
-  ['United Kingdom', 1919, 1961, ['Tanzania, United Republic of']],
-  ['United Kingdom', 1891, 1963, ['Zambia']],
-  ['United Kingdom', 1890, 1964, ['Zimbabwe']],
-  ['United Kingdom', 1820, 1970, ['Trucial Oman']],
-  ['United Kingdom', 1899, 1960, ['Kuwait']],
-  ['United Kingdom', 1920, 1931, ['Iraq']],
-  ['United Kingdom', 1921, 1945, ['Jordan']],
-  ['United Kingdom', 1920, 1947, ['Palestine']],
-  ['United Kingdom', 1878, 1959, ['Cyprus']],
-  ['United Kingdom', 1801, 1921, ['Ireland']],
-  ['United Kingdom', 1884, 1930, ['Papua New Guinea']],
-  ['Australia', 1931, 1974, ['Papua New Guinea']],
-  ['France', 1830, 1961, ['Algeria']],
-  ['France', 1881, 1955, ['Tunisia']],
-  ['France', 1912, 1955, ['Morocco']],
-  ['France', 1850, 1959, ['Senegal']],
-  ['France', 1885, 1959, ['Gabon']],
-  ['France', 1910, 1959, ['Congo']],
-  ['France', 1916, 1959, ['Cameroon']],
-  ['France', 1916, 1959, ['Togo']],
-  ['France', 1896, 1959, ['Madagascar']],
-  ['France', 1862, 1953, ['Cochin China', 'Cambodia', 'Laos']],
-  ['France', 1920, 1943, ['Syria', 'Lebanon']],
-  ['Germany', 1884, 1914, ['Togoland']],
-  ['Italy', 1912, 1942, ['Libya']],
-  ['Portugal', 1575, 1974, ['Angola', 'Mozambique']],
-  ['Portugal', 1879, 1973, ['Guinea-Bissau']],
-  ['Spain', 1778, 1967, ['Equatorial Guinea']],
-  ['Spain', 1565, 1897, ['Philippines']],
-  ['Spain', 1493, 1897, ['Puerto Rico', 'Cuba']],
-  ['United States', 1898, 1945, ['Philippines']],
-  ['United States', 1898, 2010, ['Puerto Rico']],
-  ['Denmark', 1721, 2010, ['Greenland']],
-  ['Denmark', 1380, 1917, ['Iceland']],
-  ['Japan', 1910, 1945, ['Korea']],
-  ['Japan', 1895, 1944, ['Taiwan', 'Formosa']],
-  ['Qing Empire', 1683, 1894, ['Taiwan', 'Formosa']],
-  ['South Africa', 1915, 1989, ['Namibia']],
-  // Mislabelled in the source as still ruled by someone else.
-  [SELF, 1822, 2010, ['Kingdom of Brazil', 'Brazil']],
-]
-
-export function ruledBy(name, year) {
-  if (year === undefined) return null
-  for (const [owner, from, to, names] of RULED) if (year >= from && year <= to && names.includes(name)) return owner
-  return null
-}
-
-export function ownerOf({ NAME, SUBJECTO }, year) {
-  const ruled = ruledBy((NAME || '').trim(), year)
-  if (ruled === SELF) return canonical((NAME || '').trim())
-  if (ruled) return ruled
-  if (SUBJECTO && /[a-z]/i.test(SUBJECTO) && SUBJECTO !== NAME) { // some entries are junk like "3"
-    const owner = canonical(SUBJECTO.trim())
-    if (!owner.startsWith('(')) return owner // skip notes like "(Russian and Japanese claim)"
+// The name whose colour a territory takes: its empire's power, else its own power, else itself.
+export function ownerOf({ Name, MemberOf }) {
+  for (const parent of (MemberOf || '').split(';')) {
+    const power = powerOf(parent.replace(/^\(|\)$/g, ''))
+    if (power) return power
   }
-  const name = (NAME || '').trim()
-  if (CANONICAL.has(name)) return canonical(name)
-  for (const [re, owner] of NAME_HINTS) if (re.test(name)) return owner
-  return canonical(name)
+  return powerOf(Name) ?? Name
 }
 
-// Fixed colours for the big empires so they're recognisable from map to map (and never share a
-// colour with a neighbour by chance). Everyone else gets a palette colour picked from their name.
+// Fixed colours for the big powers, so they're recognisable from map to map.
 const POWER_COLORS = {
   'United Kingdom': '#d9837f',
   France: '#7f9fcf',
@@ -150,6 +52,7 @@ const POWER_COLORS = {
   Japan: '#e09aa8',
   'Ottoman Empire': '#b98b6d',
   Denmark: '#d4a3b8',
+  Sweden: '#8fb3c9',
   Austria: '#c7b6a0',
 }
 
@@ -158,19 +61,52 @@ const PALETTE = [
   '#9fc29a', '#e0b85c', '#a98a6d', '#7fb3a6', '#d99a8f', '#b4b86a',
 ]
 
-export function colorForOwner(owner) {
-  if (POWER_COLORS[owner]) return POWER_COLORS[owner]
-  let h = 0
-  for (let i = 0; i < owner.length; i++) h = (h * 31 + owner.charCodeAt(i)) >>> 0
-  return PALETTE[h % PALETTE.length]
+const hashOf = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 0)
+const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+const TOO_CLOSE = 45 // RGB distance under which two neighbours' colours read as the same
+
+// One colour per territory. owners[i] is ownerOf() of territory i; neighbours[i] lists the indexes
+// of the territories bordering it. The big powers keep their fixed colours; everyone else starts
+// from a colour picked by name (stable from map to map) but moves along the palette until it's
+// clearly different from every neighbour's, so the Qing don't blur into the Russian Empire.
+export function assignColors(owners, neighbours) {
+  const near = new Map(owners.map((o) => [o, new Set()]))
+  owners.forEach((o, i) => {
+    for (const j of neighbours[i] || []) if (owners[j] !== o) near.get(o).add(owners[j])
+  })
+  const color = new Map()
+  for (const o of near.keys()) if (POWER_COLORS[o]) color.set(o, POWER_COLORS[o])
+  const rest = [...near.keys()].filter((o) => !color.has(o)).sort((a, b) => near.get(b).size - near.get(a).size)
+  for (const o of rest) {
+    const start = hashOf(o) % PALETTE.length
+    const taken = [...near.get(o)].map((n) => color.get(n)).filter(Boolean).map(rgb)
+    // First colour (in palette order from the name's) clear of every neighbour; if none is (a
+    // territory with many neighbours), the one furthest from its nearest neighbour's colour.
+    let pick = null
+    let best = { c: PALETTE[start], d: -1 }
+    for (let k = 0; k < PALETTE.length && !pick; k++) {
+      const c = PALETTE[(start + k) % PALETTE.length]
+      const [r, g, b] = rgb(c)
+      const d = Math.min(Infinity, ...taken.map(([r2, g2, b2]) => Math.hypot(r - r2, g - g2, b - b2)))
+      if (d >= TOO_CLOSE) pick = c
+      else if (d > best.d) best = { c, d }
+    }
+    color.set(o, pick ?? best.c)
+  }
+  return owners.map((o) => color.get(o))
 }
 
-// Label text: the territory's own name, except that very long names get shortened. Official names
-// of the big powers use their common one ("United Kingdom of Great Britain and Ireland" becomes
-// "United Kingdom"), and long bracketed notes are dropped ("Nahua (Morelos, Puebla, …)" becomes "Nahua").
+// Very long official names, shortened to the one people know.
+const SHORT_NAMES = {
+  'Union of Soviet Socialist Republics': 'Soviet Union',
+  'United Kingdom of Great Britain and Ireland': 'United Kingdom',
+  'United Kingdom of Great Britain and Northern Ireland': 'United Kingdom',
+  'United Kingdoms of Sweden and Norway': 'Sweden–Norway',
+}
+
+// Label text: the territory's own name; very long ones are shortened, or lose a bracketed note.
 export function displayName(name) {
+  if (SHORT_NAMES[name]) return SHORT_NAMES[name]
   if (name.length <= 26) return name
-  if (CANONICAL.has(name)) return CANONICAL.get(name)
-  const short = name.replace(/\s*\([^)]*\)\s*$/, '')
-  return short || name
+  return name.replace(/\s*\([^)]*\)\s*$/, '') || name
 }
