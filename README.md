@@ -34,7 +34,7 @@ npm run data:history   # Cliopatria, AD 1–1999
 npm run data:modern    # OpenHistoricalMap, 2000–2024 (public/data/2000.json)
 npm run data:flags     # flags, from the two above (public/flags/)
 ```
-The Cliopatria script corrects a few outdated names in its newest rows (see `RENAMES`); the OHM one skips a few bogus test entries, fills two date gaps and gives overseas territories their ruler's colour (see `SKIP`, `DATES`, `RULERS`). Where the switch happens is `OHM_FROM` in `src/chunks.js`.
+The Cliopatria script corrects a few outdated names in its newest rows (see `RENAMES`) and applies the historical corrections in `scripts/history-fixes/`: one file per era for wrong or anachronistic names, states that last too long, wrong empires and pieces stuck in the wrong country, and `borders-*.mjs` / `restores.mjs` for borders the source gets wrong or lacks (US expansion, New France, the Mongol khanates, countries it merges into a neighbour), redrawn from other years' shapes or hand-drawn outlines (see `scripts/history-fixes.mjs` for the format). `node scripts/check-fixes.mjs` tries fixes out without rebuilding. The OHM script applies `scripts/history-fixes/modern.mjs` the same way: breakaway states and Russia's occupation of Ukraine; the OHM one skips a few bogus test entries, fills two date gaps and gives overseas territories their ruler's colour (see `SKIP`, `DATES`, `RULERS`). Where the switch happens is `OHM_FROM` in `src/chunks.js`.
 
 ## Flags
 From 1500 on, countries show their flag next to their name. Run `npm run data:flags` after rebuilding the border data. For each territory and year it takes the first of:

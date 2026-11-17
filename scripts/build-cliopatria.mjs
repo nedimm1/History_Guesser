@@ -19,15 +19,8 @@ import fs from 'fs'
 import { execFileSync } from 'child_process'
 import mapshaper from 'mapshaper'
 import { MIN_YEAR, MAX_YEAR, OHM_FROM, chunks } from '../src/chunks.js'
-
-// Corrections to Cliopatria's newest rows, where a polity keeps an outdated name:
-// [name in the data, rows starting from this year on, corrected name].
-const RENAMES = [
-  ['Kingdom of Great Britain', 1801, 'United Kingdom'], // Act of Union 1801
-  ['Mali Federation', 1961, 'Mali'], // the federation broke up in 1960; the shape is Mali
-  ['Estado Novo', 1976, "People's Republic of Angola"], // Cabinda, part of Angola since 1975
-  ['Mujahideen', 2014, 'Syrian opposition'], // the 2014+ rows are rebel-held northern Syria
-]
+import { FIXES, applyFixes } from './history-fixes.mjs'
+import { RENAMES } from './build-cliopatria-renames.mjs'
 
 const SOURCE_ZIP = 'https://github.com/Seshat-Global-History-Databank/cliopatria/raw/main/cliopatria.geojson.zip'
 const SRC_DIR = 'data-src'
@@ -60,6 +53,7 @@ for (const f of territories.features) {
   const fix = RENAMES.find(([name, from]) => f.properties.Name === name && f.properties.FromYear >= from)
   if (fix) f.properties.Name = fix[2]
 }
+territories.features = await applyFixes(territories.features, FIXES)
 fs.writeFileSync(base, JSON.stringify(territories))
 
 const list = chunks()

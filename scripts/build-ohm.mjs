@@ -16,6 +16,8 @@ import { createRequire } from 'module'
 import { geoArea } from 'd3-geo'
 import mapshaper from 'mapshaper'
 import { MAX_YEAR, OHM_FROM } from '../src/chunks.js'
+import { applyFixes } from './history-fixes.mjs'
+import MODERN_FIXES from './history-fixes/modern.mjs'
 
 const osmtogeojson = createRequire(import.meta.url)('osmtogeojson')
 
@@ -23,12 +25,37 @@ const OVERPASS = 'https://overpass-api.openhistoricalmap.org/api/interpreter'
 const SRC = 'data-src/ohm-modern.json'
 const OUT = `public/data/${OHM_FROM}.json`
 
-// Not real countries: test edits left in OHM, and a river condominium that has no land.
-const SKIP = new Set(['Goseria', 'Pulerid', 'Kongroneria', 'Germany-Luxembourg condominium'])
+// Not real countries: test edits left in OHM, and a river condominium that has no land. Numbers
+// are OHM relation IDs: outdated versions of a country that a newer, better version replaces.
+const SKIP = new Set([
+  'Goseria', 'Pulerid', 'Kongroneria', 'Germany-Luxembourg condominium',
+  2851798, // Norway before 2004, without Svalbard and Jan Mayen (Norwegian since 1925/1929)
+  2945317, // Ecuador before 2012, whose Galápagos is a huge block of ocean
+])
 
-// Dates OHM only gives to the year, which leave a gap: [name, field, exact date].
+// Dates OHM has wrong or only to the year: [name or OHM relation ID, field, date]. An empty date
+// means none (no end date: still exists).
 const DATES = [
   ['Transitional Islamic State of Afghanistan', 'start_date', '2001-12-22'], // the interim government took over in December 2001
+  // OHM ends these British territories in 2002 (when they became "overseas territories") with no
+  // successor; they never stopped being British.
+  ['British Virgin Islands', 'end_date', ''],
+  ['Cayman Islands', 'end_date', ''],
+  ['Colony of the Turks and Caicos Islands', 'end_date', ''],
+  ['Montserrat', 'end_date', ''],
+  ['Anguilla', 'start_date', '1980-12-19'], // separate from Saint Kitts and Nevis since 1980
+  [2876342, 'start_date', '1946-10-27'], // French Polynesia (a French territory since 1946)
+  ['Wallis and Futuna', 'start_date', '1961-07-29'],
+  [2851792, 'start_date', '1925-08-14'], // Norway with Svalbard, replacing the older version
+  [2945316, 'start_date', '1966-11-10'], // Ecuador, replacing the older version
+]
+
+// Names OHM gives that aren't the ones in use: [name or OHM relation ID, name to show].
+const NAMES = [
+  ['Colony of the Turks and Caicos Islands', 'Turks and Caicos Islands'], // a colony until 1976
+  [2864409, 'East Timor (UN administration)'], // UNTAET ran it from 1999 until independence in May 2002
+  [2822856, 'Islamic Emirate of Afghanistan'], // the Taliban's state since August 2021
+  ['Yugoslavia', 'Federal Republic of Yugoslavia'], // its official name until Serbia and Montenegro (February 2003)
 ]
 
 // Wikidata IDs for the countries OHM has none for (scripts/build-flags.mjs finds flags by them).
@@ -37,6 +64,7 @@ const WIKIDATA = {
   Laos: 'Q819', Pakistan: 'Q843', Sudan: 'Q1049', Maldives: 'Q826', Ethiopia: 'Q115', Somalia: 'Q1045',
   Eritrea: 'Q986', Honduras: 'Q783', Afghanistan: 'Q889', 'Islamic Republic of Afghanistan': 'Q889',
   'Transitional Islamic State of Afghanistan': 'Q889', 'Islamic Emirate of Afghanistan': 'Q427941',
+  'Turks and Caicos Islands': 'Q18221',
   Kuwait: 'Q817', Syria: 'Q858', Guatemala: 'Q774', Malaysia: 'Q833', Cambodia: 'Q424',
   'Guinea-Bissau': 'Q1007', Nicaragua: 'Q811',
 }
@@ -45,7 +73,7 @@ const WIKIDATA = {
 const RULERS = {
   'United Kingdom': [
     'Gibraltar', 'Bermuda', 'British Virgin Islands', 'Montserrat', 'Colony of the Turks and Caicos Islands',
-    'Cayman Islands', 'Anguilla', 'Pitcairn Islands', 'Akrotiri and Dhekelia', 'British Indian Ocean Territory',
+    'Cayman Islands', 'Anguilla', 'Turks and Caicos Islands', 'Pitcairn Islands', 'Akrotiri and Dhekelia', 'British Indian Ocean Territory',
     'Saint Helena and Dependencies', 'Saint Helena, Ascension and Tristan da Cunha', 'Guernsey', 'Jersey', 'Isle of Man',
   ],
   Denmark: ['Greenland'],
@@ -99,10 +127,13 @@ const features = []
 for (const f of osmtogeojson(osm, { flatProperties: true }).features) {
   if (!/Polygon/.test(f.geometry?.type) || !f.id?.startsWith('relation')) continue
   const p = f.properties
-  for (const [n, field, date] of DATES) if (p.name === n || p['name:en'] === n) p[field] = date
-  const name = (p['name:en'] || p.name || '').replace(/\s*\([^)]*\d{4}[^)]*\)$/, '') // "Ethiopia (1993-)"
+  const id = +f.id.split('/')[1]
+  const is = (n) => n === id || p.name === n || p['name:en'] === n
+  for (const [n, field, date] of DATES) if (is(n)) p[field] = date
+  let name = (p['name:en'] || p.name || '').replace(/\s*\([^)]*\d{4}[^)]*\)$/, '') // "Ethiopia (1993-)"
+  name = NAMES.find(([n]) => is(n))?.[1] ?? name
   const start = dateOf(p.start_date)
-  if (!name || SKIP.has(name) || start === null) continue
+  if (!name || SKIP.has(name) || SKIP.has(id) || start === null) continue
   const FromYear = Math.max(firstYear(start), OHM_FROM)
   const ToYear = Math.min(lastYear(dateOf(p.end_date)), MAX_YEAR)
   if (FromYear > ToYear) continue
@@ -117,11 +148,14 @@ for (const f of osmtogeojson(osm, { flatProperties: true }).features) {
 // annexation), the one whose borders are newer is drawn on top: the side holding it now.
 features.sort((a, b) => a.properties.FromYear - b.properties.FromYear)
 
+// Breakaway states and occupied land (scripts/history-fixes/modern.mjs), drawn last so they sit on top.
+const fixed = await applyFixes(features, MODERN_FIXES)
+
 const tmp = 'data-src/ohm-modern.geojson'
-fs.writeFileSync(tmp, JSON.stringify({ type: 'FeatureCollection', features }))
+fs.writeFileSync(tmp, JSON.stringify({ type: 'FeatureCollection', features: fixed }))
 await mapshaper.runCommands(
   `-i ${tmp} -rename-layers borders -simplify 3% keep-shapes -filter-islands min-area=20km2 ` +
     `-o ${OUT} format=topojson quantization=100000`,
 )
 fs.rmSync(tmp)
-console.log(`Wrote ${features.length} territories to ${OUT} (${(fs.statSync(OUT).size / 1024).toFixed(0)} KB)`)
+console.log(`Wrote ${fixed.length} territories to ${OUT} (${(fs.statSync(OUT).size / 1024).toFixed(0)} KB)`)
