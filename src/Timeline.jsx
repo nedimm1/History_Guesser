@@ -1,7 +1,8 @@
 import { useRef } from 'react'
 import { posToYear, yearToPos, formatYear, TICKS, MIN_YEAR, MAX_YEAR } from './game'
 
-export default function Timeline({ guess, onChange, actual, locked }) {
+// actualLabel: how to write the answer ("November 1995"); defaults to its year.
+export default function Timeline({ guess, onChange, actual, actualLabel, locked }) {
   const ref = useRef(null)
 
   function setFromEvent(e) {
@@ -53,7 +54,7 @@ export default function Timeline({ guess, onChange, actual, locked }) {
               }}
             />
             <div className="marker actual" style={{ left: pct(actual) }}>
-              <span>{formatYear(actual)}</span>
+              <span>{actualLabel ?? formatYear(actual)}</span>
             </div>
           </>
         )}

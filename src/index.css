@@ -145,6 +145,11 @@ header {
   vector-effect: non-scaling-stroke;
 }
 .city.rank1 text { font-weight: 650; }
+/* Capitals: a star, in the map's accent red, instead of a dot. */
+.city.capital polygon { fill: #9c3d26; stroke: rgba(255, 250, 238, 0.9); stroke-width: 1px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.city.capital text { font-weight: 650; }
+/* Seats of colonies and other dependent territories: the same star, hollow. */
+.city.colony polygon { fill: rgba(255, 250, 238, 0.95); stroke: #9c3d26; stroke-width: 1.4px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .tooltip-flag { height: 14px; margin-right: 8px; vertical-align: -2px; border: 1px solid var(--line); }
 .map-loading {
   position: absolute; inset: 0;
@@ -198,11 +203,21 @@ header {
 .guess-readout { font-size: 34px; font-weight: 700; margin-right: auto; min-width: 160px; }
 .reveal-text { margin-right: auto; font-size: 18px; }
 .pts { margin-left: 14px; color: var(--accent); font-weight: 700; font-size: 22px; }
+.month-bonus { margin-left: 10px; font-size: 14px; color: var(--muted); }
+
+/* Month picker: one row of twelve, wrapping on narrow screens. */
+.months { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: -8px 0 14px; }
+.months button { padding: 5px 0; width: 46px; font-size: 13px; border-radius: 6px; }
+.months button.on { background: var(--guess); border-color: var(--guess); color: var(--card); }
+.months.inactive button { opacity: 0.4; cursor: default; }
+.months-hint { margin-left: 8px; font-size: 12px; color: var(--muted); }
 
 @media (max-width: 640px) {
   .stats { gap: 12px; font-size: 13px; }
   .tick:nth-child(odd) span { display: none; }
   .guess-readout { font-size: 28px; min-width: 0; }
+  .months button { width: calc((100% - 5 * 4px) / 6); }
+  .months-hint { flex-basis: 100%; margin-left: 0; }
 }
 .coast {
   fill: none;

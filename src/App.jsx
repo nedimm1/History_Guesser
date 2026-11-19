@@ -2,42 +2,49 @@ import { useEffect, useState } from 'react'
 import MapView, { preloadYear } from './MapView'
 import Timeline from './Timeline'
 import {
-  REGIONS, ROUNDS, MAX_POINTS, MIN_YEAR, MAX_YEAR,
-  pickYears, scoreGuess, formatYear, rating,
+  REGIONS, ROUNDS, MAX_POINTS, MIN_YEAR, MAX_YEAR, MONTHS_FROM, MONTH_NAMES, MONTH_POINTS,
+  pickRounds, scoreGuess, formatYear, formatDate, offBy, rating,
 } from './game'
 
 export default function App() {
   const [phase, setPhase] = useState('menu') // menu | guessing | reveal | summary
   const [region, setRegion] = useState('world')
-  const [years, setYears] = useState([])
+  const [rounds, setRounds] = useState([]) // [{ year, month }]
   const [round, setRound] = useState(0)
   const [guess, setGuess] = useState(1000)
+  const [guessMonth, setGuessMonth] = useState(null)
   const [results, setResults] = useState([])
 
-  const actual = years[round]
+  const actual = rounds[round]
   const total = results.reduce((s, r) => s + r.points, 0)
 
   useEffect(() => {
-    if (years[round + 1] !== undefined) preloadYear(years[round + 1])
-  }, [years, round])
+    const n = rounds[round + 1]
+    if (n) preloadYear(n.year, n.month)
+  }, [rounds, round])
 
   function start(regionKey) {
-    const ys = pickYears(regionKey)
-    // Dev only: ?year=1815 makes the first round that year, for checking a particular map.
-    const forced = import.meta.env.DEV && Number(new URLSearchParams(location.search).get('year'))
-    if (forced) ys[0] = forced
-    ys.forEach((y, i) => i < 2 && preloadYear(y))
+    const rs = pickRounds(regionKey)
+    // Dev only: ?year=1815 (or ?year=1991-12) makes the first round that date, for checking a map.
+    const forced = import.meta.env.DEV && new URLSearchParams(location.search).get('year')?.match(/^(\d{1,4})(?:-(\d{1,2}))?$/)
+    if (forced) {
+      const year = +forced[1]
+      rs[0] = { year, month: year >= MONTHS_FROM ? +forced[2] || 1 : null }
+    }
+    rs.forEach((r, i) => i < 2 && preloadYear(r.year, r.month))
     setRegion(regionKey)
-    setYears(ys)
+    setRounds(rs)
     setRound(0)
     setResults([])
     setGuess(1000)
+    setGuessMonth(null)
     setPhase('guessing')
   }
 
   function submit() {
-    const points = scoreGuess(guess, actual)
-    setResults((r) => [...r, { actual, guess, points }])
+    const g = { year: guess, month: guess >= MONTHS_FROM ? guessMonth : null }
+    const { points, monthPoints } = scoreGuess(g, actual)
+    setResults((r) => [...r, { actual, guess: g, points, monthPoints }])
     setPhase('reveal')
   }
 
@@ -45,6 +52,7 @@ export default function App() {
     if (round + 1 >= ROUNDS) return setPhase('summary')
     setRound(round + 1)
     setGuess(1000)
+    setGuessMonth(null)
     setPhase('guessing')
   }
 
@@ -65,6 +73,7 @@ export default function App() {
         </div>
         <p className="fine">
           {ROUNDS} rounds · up to {MAX_POINTS.toLocaleString()} points each · AD {MIN_YEAR} – {MAX_YEAR}
+          <br />From {MONTHS_FROM} on, guess the month too: borders change month by month.
         </p>
         <Credits />
         {import.meta.env.DEV && <p className="fine"><a href="?viewer">Map viewer</a> (dev only)</p>}
@@ -87,9 +96,9 @@ export default function App() {
             {results.map((r, i) => (
               <tr key={i}>
                 <td>{i + 1}</td>
-                <td>{formatYear(r.actual)}</td>
-                <td>{formatYear(r.guess)}</td>
-                <td>{Math.abs(r.guess - r.actual)} yrs</td>
+                <td>{formatDate(r.actual)}</td>
+                <td>{formatDate(r.guess)}</td>
+                <td>{offBy(r.guess, r.actual).replace(/ off$/, '')}</td>
                 <td>{r.points.toLocaleString()}</td>
               </tr>
             ))}
@@ -117,21 +126,30 @@ export default function App() {
         </div>
       </header>
 
-      <MapView year={actual} region={region} bbox={REGIONS[region].bbox} />
+      <MapView year={actual.year} month={actual.month} region={region} bbox={REGIONS[region].bbox} />
 
       <section className="panel">
-        <Timeline guess={guess} onChange={setGuess} actual={revealed ? actual : undefined} locked={revealed} />
+        <Timeline
+          guess={guess}
+          onChange={setGuess}
+          actual={revealed ? actual.year : undefined}
+          actualLabel={revealed ? formatDate(actual) : undefined}
+          locked={revealed}
+        />
+        {!revealed && <MonthPicker month={guessMonth} onChange={setGuessMonth} active={guess >= MONTHS_FROM} />}
         <div className="actions">
           {!revealed ? (
             <>
-              <div className="guess-readout">{formatYear(guess)}</div>
+              <div className="guess-readout">
+                {guess >= MONTHS_FROM && guessMonth ? formatDate({ year: guess, month: guessMonth }) : formatYear(guess)}
+              </div>
               <button className="primary" onClick={submit}>Guess</button>
             </>
           ) : (
             <>
               <div className="reveal-text">
-                It was <b>{formatYear(last.actual)}</b>. You were{' '}
-                {last.guess === last.actual ? 'spot on!' : `${Math.abs(last.guess - last.actual)} years off.`}
+                It was <b>{formatDate(last.actual)}</b>. {revealOff(offBy(last.guess, last.actual))}
+                {last.monthPoints > 0 && <span className="month-bonus"> Month bonus +{last.monthPoints}</span>}
                 <span className="pts">+{last.points.toLocaleString()}</span>
               </div>
               <button className="primary" onClick={next}>
@@ -142,6 +160,38 @@ export default function App() {
         </div>
         {!revealed && <p className="fine">Drag the timeline or use ← → (Shift for big steps). Scroll the map to zoom in on smaller states.</p>}
       </section>
+    </div>
+  )
+}
+
+// "You were 3 months off." / "Spot on!" / "Right year, no month."
+function revealOff(off) {
+  if (off === 'spot on') return 'Spot on!'
+  if (off.endsWith(' off')) return `You were ${off}.`
+  return `${off[0].toUpperCase()}${off.slice(1)}.`
+}
+
+// Twelve month buttons. They only count once the guess is in the months era (MONTHS_FROM on);
+// before that they're greyed out. Clicking the chosen month again clears it.
+function MonthPicker({ month, onChange, active }) {
+  return (
+    <div className={`months ${active ? '' : 'inactive'}`} role="radiogroup" aria-label="Month">
+      {MONTH_NAMES.map((name, i) => (
+        <button
+          key={name}
+          type="button"
+          role="radio"
+          aria-checked={month === i + 1}
+          disabled={!active}
+          className={month === i + 1 ? 'on' : ''}
+          onClick={() => onChange(month === i + 1 ? null : i + 1)}
+        >
+          {name.slice(0, 3)}
+        </button>
+      ))}
+      <span className="months-hint">
+        {active ? `Month: up to +${MONTH_POINTS} if close` : `Months count from ${MONTHS_FROM}`}
+      </span>
     </div>
   )
 }

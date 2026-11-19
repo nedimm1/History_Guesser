@@ -1,12 +1,13 @@
 // Historical corrections to Cliopatria, applied by scripts/build-cliopatria.mjs after RENAMES.
 //
 // Each fix is [name, from, to, action]: it touches the rows of territory `name` for the years
-// from–to (inclusive), splitting a row that only partly overlaps. Actions:
+// from–to (inclusive), splitting a row that only partly overlaps. from and to can also be months,
+// '2014-03' (from March 2014; as `to`, until the end of that month). Actions:
 //   { rename: 'New name' }   those years get another name
 //   { drop: true }           those years are removed (a state that ended earlier, a duplicate)
 //   { member: '(Empire)' }   those years belong to another empire ('' for none)
-//   { extend: year }         the row ending at `to` is stretched to end at `year` (a state that
-//                            lasted longer than the data says; `from` is ignored)
+//   { extend: year }         the row ending in year `to` is stretched to end at `year` (or a month,
+//                            '1991-12': a state that lasted longer than the data says; `from` is ignored)
 //   { restore: year, as: 'Name', member: '(Empire)' }
 //                            `name`'s shape in `year` is drawn for from–to as `as` (default
 //                            `name`), and cut out of everything else drawn there in those years:
@@ -31,6 +32,7 @@
 import fs from 'fs'
 import { geoArea, geoBounds, geoCentroid } from 'd3-geo'
 import mapshaper from 'mapshaper'
+import { parseMonth, rowStart, rowEnd, withSpan } from '../src/dates.js'
 import era1 from './history-fixes/1-999.mjs'
 import era2 from './history-fixes/1000-1499.mjs'
 import era3 from './history-fixes/1500-1799.mjs'
@@ -59,9 +61,10 @@ function byBox(f, [w, s, e, n]) {
   return [make(polys.filter(inBox)), make(polys.filter((r) => !inBox(r)))]
 }
 
+// Splits a row at months from–to (month indexes): the part inside, and the parts before and after.
 function split(f, from, to) {
-  const { FromYear: a, ToYear: b } = P(f)
-  const part = (x, y) => ({ ...f, properties: { ...P(f), FromYear: x, ToYear: y } })
+  const [a, b] = [rowStart(P(f)), rowEnd(P(f))]
+  const part = (x, y) => ({ ...f, properties: withSpan(P(f), x, y) })
   const inside = part(Math.max(a, from), Math.min(b, to))
   const outside = []
   if (a < from) outside.push(part(a, from - 1))
@@ -136,17 +139,18 @@ async function newShape(features, [name, , , act]) {
 // `restore` / `draw`: draws a shape for from–to as a territory of its own. Normally it is cut out of
 // everything else drawn there in those years; with `under: true` it only fills land nobody holds.
 async function addShape(features, fix) {
-  const [name, from, to, act] = fix
+  const [name, , , act] = fix
+  const [from, to] = [parseMonth(fix[1]), parseMonth(fix[2], true)]
   const made = await newShape(features, fix)
   if (!made) {
-    console.warn(`Fix matched nothing: ${name} ${from}–${to} ${JSON.stringify(act).slice(0, 120)}`)
+    console.warn(`Fix matched nothing: ${name} ${fix[1]}–${fix[2]} ${JSON.stringify(act).slice(0, 120)}`)
     return features
   }
   const box = geoBounds(made.geometry)
   const props = { ...(made.template ? P(made.template) : { Wikidata: null, MemberOf: null }), Name: act.as ?? name }
   if (act.member !== undefined) props.MemberOf = act.member || null
   if (act.wikidata !== undefined) props.Wikidata = act.wikidata
-  const near = (f) => !(P(f).ToYear < from || P(f).FromYear > to) && overlaps(geoBounds(f), box)
+  const near = (f) => !(rowEnd(P(f)) < from || rowStart(P(f)) > to) && overlaps(geoBounds(f), box)
   if (!act.under) {
     const keep = []
     const cut = []
@@ -164,19 +168,19 @@ async function addShape(features, fix) {
     }
     const left = cut.length ? await mapshape('-i a.json -erase b.json', { 'a.json': FC(cut), 'b.json': FC([shapeFeature(made.geometry)]) }) : []
     if (act.eraseFrom) return [...keep, ...left]
-    return [...keep, ...left, { type: 'Feature', geometry: made.geometry, properties: { ...props, FromYear: from, ToYear: to } }]
+    return [...keep, ...left, { type: 'Feature', geometry: made.geometry, properties: withSpan(props, from, to) }]
   }
-  // Under: one piece per stretch of years in which the neighbours stay the same.
+  // Under: one piece per stretch of months in which the neighbours stay the same.
   const others = features.filter(near)
   const cuts = new Set([from, to + 1])
-  for (const f of others) for (const y of [P(f).FromYear, P(f).ToYear + 1]) if (y > from && y <= to) cuts.add(y)
+  for (const f of others) for (const t of [rowStart(P(f)), rowEnd(P(f)) + 1]) if (t > from && t <= to) cuts.add(t)
   const edges = [...cuts].sort((a, b) => a - b)
   const added = []
   for (let i = 0; i < edges.length - 1; i++) {
     const [a, b] = [edges[i], edges[i + 1] - 1]
-    const there = others.filter((f) => P(f).FromYear <= a && b <= P(f).ToYear)
+    const there = others.filter((f) => rowStart(P(f)) <= a && b <= rowEnd(P(f)))
     const left = there.length ? await mapshape('-i a.json -erase b.json', { 'a.json': FC([shapeFeature(made.geometry)]), 'b.json': FC(there) }) : [shapeFeature(made.geometry)]
-    if (left.length) added.push({ type: 'Feature', geometry: multi(left), properties: { ...props, FromYear: a, ToYear: b } })
+    if (left.length) added.push({ type: 'Feature', geometry: multi(left), properties: withSpan(props, a, b) })
   }
   return [...features, ...added]
 }
@@ -188,18 +192,20 @@ export async function applyFixes(features, fixes) {
     const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates
     return { ...f, geometry: { type: 'MultiPolygon', coordinates: polys.map(upright) } }
   })
-  for (const [name, from, to, act] of fixes) {
-    if (act.restore !== undefined || act.draw) { out = await addShape(out, [name, from, to, act]); continue }
+  for (const fix of fixes) {
+    const [name, , , act] = fix
+    if (act.restore !== undefined || act.draw) { out = await addShape(out, fix); continue }
+    const [from, to] = [parseMonth(fix[1]), parseMonth(fix[2], true)]
     let hits = 0
     const next = []
     for (const f of out) {
       if (P(f).Name !== name) { next.push(f); continue }
       if (act.extend !== undefined) {
-        if (P(f).ToYear === to) { next.push({ ...f, properties: { ...P(f), ToYear: act.extend } }); hits++ }
+        if (P(f).ToYear === fix[2]) { next.push({ ...f, properties: withSpan(P(f), rowStart(P(f)), parseMonth(act.extend, true)) }); hits++ }
         else next.push(f)
         continue
       }
-      if (P(f).ToYear < from || P(f).FromYear > to) { next.push(f); continue }
+      if (rowEnd(P(f)) < from || rowStart(P(f)) > to) { next.push(f); continue }
       const { inside: span, outside } = split(f, from, to)
       next.push(...outside)
       let inside = span
@@ -215,7 +221,7 @@ export async function applyFixes(features, fixes) {
       if (act.member !== undefined) P(inside).MemberOf = act.member || null
       next.push(inside)
     }
-    if (!hits) console.warn(`Fix matched nothing: ${name} ${from}–${to} ${JSON.stringify(act)}`)
+    if (!hits) console.warn(`Fix matched nothing: ${name} ${fix[1]}–${fix[2]} ${JSON.stringify(act)}`)
     out = next
   }
   return out

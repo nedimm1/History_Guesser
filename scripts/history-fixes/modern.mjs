@@ -1,6 +1,6 @@
 // Corrections to the OpenHistoricalMap data (2000–2024), applied by scripts/build-ohm.mjs. Same
-// format as the other files here (see scripts/history-fixes.mjs). Each year shows the map at the
-// end of that year; outlines are approximate (front lines to within a few km) and are kept inside
+// format as the other files here (see scripts/history-fixes.mjs). Each month shows the map at the
+// end of that month; outlines are approximate (front lines to within a few km) and are kept inside
 // the country they are taken from.
 //
 // De facto control is shown, as for Crimea (Russian from 2014 in OHM): breakaway states that held
@@ -36,17 +36,20 @@ export default [
   // --- Ukraine ---
   // OHM keeps Crimea in Ukraine's shape after Russia's 2014 annexation and relies on drawing order;
   // cut it out so Russia's Crimea is the only one, whatever order the shapes end up in.
-  ['Crimea', 2014, 2024, { within: UA, eraseFrom: ['Ukraine'], draw: [[32.3, 46.05], [33.4, 46.2], [34.0, 46.22], [34.9, 46.1], [36.8, 45.6], [36.8, 44.2], [32.3, 44.2]] }],
-  // 2014–2021: the Russian-backed "people's republics" behind the 2015 Minsk II contact line.
-  ["Donetsk People's Republic", 2014, 2021, { within: UA, wikidata: 'Q16150196', draw: [
+  ['Crimea', '2014-03', 2024, { within: UA, eraseFrom: ['Ukraine'], draw: [[32.3, 46.05], [33.4, 46.2], [34.0, 46.22], [34.9, 46.1], [36.8, 45.6], [36.8, 44.2], [32.3, 44.2]] }],
+  // April 2014 – February 2022: the Russian-backed "people's republics" (proclaimed April 2014),
+  // drawn behind the 2015 Minsk II contact line throughout.
+  ["Donetsk People's Republic", '2014-04', '2022-02', { within: UA, wikidata: 'Q16150196', draw: [
     [40.8, 48.75], [39.5, 48.62], [39.0, 48.55], [38.7, 48.58], [38.45, 48.52], [38.36, 48.36], [38.0, 48.36],
     [37.85, 48.18], [37.73, 48.06], [37.6, 47.97], [37.66, 47.75], [37.85, 47.45], [37.75, 47.07], [37.6, 46.6], [40.8, 46.6],
   ] }],
-  ["Luhansk People's Republic", 2014, 2021, { within: UA, wikidata: 'Q16746854', draw: [
+  ["Luhansk People's Republic", '2014-04', '2022-02', { within: UA, wikidata: 'Q16746854', draw: [
     [40.8, 48.75], [39.5, 48.62], [39.0, 48.55], [38.7, 48.58], [38.45, 48.52], [38.3, 48.45], [39.2, 48.05], [39.85, 47.85], [40.8, 47.85],
   ] }],
-  // 2022–2024: Russia's occupation (annexation claimed September 2022), drawn in Russia's colour.
-  ['Russian-occupied Ukraine', 2022, 2022, { within: UA, member: '(Russia)', wikidata: null, draw: [...FRONT_2022, ...DNIPRO, ...SOUTH_COAST, ...FAR_EAST] }],
+  // From the invasion (24 February 2022): Russia's occupation (annexation claimed September 2022),
+  // drawn in Russia's colour. Each year's line is where the front stood at its end; March–November
+  // 2022, when Russia also held the north, Kharkiv oblast and Kherson, get the end-of-2022 line too.
+  ['Russian-occupied Ukraine', '2022-03', 2022, { within: UA, member: '(Russia)', wikidata: null, draw: [...FRONT_2022, ...DNIPRO, ...SOUTH_COAST, ...FAR_EAST] }],
   ['Russian-occupied Ukraine', 2023, 2023, { within: UA, member: '(Russia)', wikidata: null, draw: [...FRONT_2023, ...DNIPRO, ...SOUTH_COAST, ...FAR_EAST] }],
   ['Russian-occupied Ukraine', 2024, 2024, { within: UA, member: '(Russia)', wikidata: null, draw: [...FRONT_2024, ...DNIPRO, ...SOUTH_COAST, ...FAR_EAST] }],
 
@@ -69,11 +72,12 @@ export default [
     [43.4, 42.15], [43.6, 42.0], [44.1, 42.05], [44.4, 42.2], [44.5, 42.5], [44.1, 42.65], [43.6, 42.6], [43.4, 42.45],
   ] }],
   // Nagorno-Karabakh: with the seven surrounding districts from the 1994 ceasefire until the 2020
-  // war, then the rump around Stepanakert until the September 2023 offensive ended it.
-  ['Republic of Artsakh', 2000, 2019, { within: ['Azerbaijan', 2010], wikidata: 'Q244165', draw: [
+  // war (ceasefire 10 November), then the rump around Stepanakert until the September 2023
+  // offensive ended it.
+  ['Republic of Artsakh', 2000, '2020-10', { within: ['Azerbaijan', 2010], wikidata: 'Q244165', draw: [
     [45.3, 40.5], [46.0, 40.4], [46.5, 40.3], [46.75, 40.2], [46.95, 40.05], [47.0, 39.8], [47.0, 39.5], [46.9, 39.1], [45.3, 39.1],
   ] }],
-  ['Republic of Artsakh', 2020, 2022, { within: ['Azerbaijan', 2020], wikidata: 'Q244165', draw: [
+  ['Republic of Artsakh', '2020-11', '2023-08', { within: ['Azerbaijan', 2020], wikidata: 'Q244165', draw: [
     [46.45, 40.25], [46.9, 40.15], [47.0, 39.95], [46.95, 39.7], [46.8, 39.66], [46.67, 39.79], [46.5, 39.9], [46.35, 40.1],
   ] }],
   // Western Sahara: shown apart from Morocco, as on most world maps (its status is unresolved).

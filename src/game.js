@@ -1,6 +1,7 @@
 import { MIN_YEAR, MAX_YEAR } from './chunks'
+import { MONTHS_FROM, MONTH_NAMES, monthIndex } from './dates'
 
-export { MIN_YEAR, MAX_YEAR }
+export { MIN_YEAR, MAX_YEAR, MONTHS_FROM, MONTH_NAMES }
 export const ROUNDS = 5
 export const MAX_POINTS = 5000
 
@@ -14,22 +15,46 @@ export const REGIONS = {
   americas: { label: 'The Americas', bbox: [-170, -56, -30, 72], minYear: 1400 },
 }
 
-// Any year can come up. Two rounds in three are from 1700 on, and the rest from earlier.
-export const RECENT_FROM = 1700
-const RECENT_SHARE = 2 / 3
+// Any year can come up, but recent history is favoured: about 72% of rounds are from
+// 1800 on (19th–21st centuries), 14% from 1500–1799, and 14% from before 1500. The
+// weights are set above those shares because MIN_GAP rejects more draws in the crowded
+// recent era. A region whose minYear cuts into an era gets that era's weight scaled down
+// by the share it keeps.
+const ERAS = [
+  { from: 1800, to: MAX_YEAR, weight: 0.78 },
+  { from: 1500, to: 1799, weight: 0.11 },
+  { from: MIN_YEAR, to: 1499, weight: 0.11 },
+]
 const MIN_GAP = 20 // rounds in one game are at least this many years apart
 
 const randomInt = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1))
 
-// Draws n years for a game, in the order they'll be played.
-export function pickYears(regionKey, n = ROUNDS) {
-  const lo = REGIONS[regionKey].minYear
-  const recentLo = Math.max(lo, RECENT_FROM)
+function erasFrom(lo) {
+  return ERAS.filter((e) => e.to >= lo).map((e) => {
+    const from = Math.max(e.from, lo)
+    return { from, to: e.to, weight: (e.weight * (e.to - from + 1)) / (e.to - e.from + 1) }
+  })
+}
+
+function randomYear(eras) {
+  let r = Math.random() * eras.reduce((s, e) => s + e.weight, 0)
+  for (const e of eras) {
+    if ((r -= e.weight) < 0) return randomInt(e.from, e.to)
+  }
+  const last = eras[eras.length - 1]
+  return randomInt(last.from, last.to)
+}
+
+// Draws n rounds for a game, in the order they'll be played: { year, month }, with month 1–12
+// from MONTHS_FROM on and null before (the data only knows years there).
+export function pickRounds(regionKey, n = ROUNDS) {
+  const eras = erasFrom(REGIONS[regionKey].minYear)
   const picked = []
   for (let tries = 0; picked.length < n && tries < 1000; tries++) {
-    const recent = lo >= RECENT_FROM || Math.random() < RECENT_SHARE
-    const y = recent ? randomInt(recentLo, MAX_YEAR) : randomInt(lo, RECENT_FROM - 1)
-    if (picked.every((p) => Math.abs(p - y) >= MIN_GAP)) picked.push(y)
+    const year = randomYear(eras)
+    if (picked.every((p) => Math.abs(p.year - year) >= MIN_GAP)) {
+      picked.push({ year, month: year >= MONTHS_FROM ? randomInt(1, 12) : null })
+    }
   }
   return picked
 }
@@ -40,17 +65,51 @@ export function formatYear(y) {
   return `AD ${y}`
 }
 
+// { year: 1995, month: 11 } → "November 1995"; without a month, "AD 1995".
+export function formatDate({ year, month }) {
+  return month ? `${MONTH_NAMES[month - 1]} ${year}` : formatYear(year)
+}
+
+// Whether a guess's month counts: the round has one and the guess is in the months era too.
+const monthly = (guess, actual) => !!(actual.month && guess.month && guess.year >= MONTHS_FROM)
+
+// How far off a guess is, in months when both have one, else in years: '2 years 3 months off',
+// 'spot on', or 'right year, no month' (the round had one, the guess didn't).
+export function offBy(guess, actual) {
+  if (monthly(guess, actual)) {
+    const m = Math.abs(monthIndex(guess.year, guess.month) - monthIndex(actual.year, actual.month))
+    if (m === 0) return 'spot on'
+    const [y, r] = [Math.floor(m / 12), m % 12]
+    return [y && `${y} year${y > 1 ? 's' : ''}`, r && `${r} month${r > 1 ? 's' : ''}`].filter(Boolean).join(' ') + ' off'
+  }
+  const y = Math.abs(guess.year - actual.year)
+  if (y === 0) return actual.month ? 'right year, no month' : 'spot on'
+  return `${y} year${y > 1 ? 's' : ''} off`
+}
+
 // The further back in time, the more forgiving the scoring.
 export function tolerance(actual) {
   const age = 2026 - actual
   return Math.max(25, age * 0.15)
 }
 
+// Rounds with a month keep MONTH_POINTS of the total for getting the month close; the rest is
+// scored on the years off, as before (full marks within 2 years).
+export const MONTH_POINTS = 500
+const monthPoints = (monthsOff) => (monthsOff === 0 ? MONTH_POINTS : monthsOff === 1 ? 300 : monthsOff <= 3 ? 150 : 0)
+
+// guess and actual are { year, month }. Returns { points, yearPoints, monthPoints }.
 export function scoreGuess(guess, actual) {
-  const diff = Math.abs(guess - actual)
-  let pts = MAX_POINTS * Math.exp(-diff / tolerance(actual))
-  if (diff <= 2) pts = MAX_POINTS
-  return Math.round(pts)
+  const max = actual.month ? MAX_POINTS - MONTH_POINTS : MAX_POINTS
+  let diff = Math.abs(guess.year - actual.year)
+  let bonus = 0
+  if (monthly(guess, actual)) {
+    const monthsOff = Math.abs(monthIndex(guess.year, guess.month) - monthIndex(actual.year, actual.month))
+    diff = monthsOff / 12
+    bonus = monthPoints(monthsOff)
+  }
+  const yearPoints = Math.round(diff <= 2 ? max : max * Math.exp(-diff / tolerance(actual.year)))
+  return { points: yearPoints + bonus, yearPoints, monthPoints: bonus }
 }
 
 // Non-linear timeline: modern centuries get more slider space than ancient ones.

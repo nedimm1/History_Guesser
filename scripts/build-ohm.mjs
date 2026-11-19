@@ -7,8 +7,9 @@
 // (2018), North Macedonia (2019), Türkiye (2022) … all appear in the right year.
 //
 // It writes public/data/<OHM_FROM>.json (same TopoJSON layout as the Cliopatria chunks), replacing
-// that chunk. Each year shows the map as it stood at the end of that year, so South Sudan
-// (independent July 2011) is on the 2011 map.
+// that chunk. Spans are kept to the month (FromYear/FromMonth–ToYear/ToMonth, see src/dates.js):
+// each month shows the map as it stood at the end of that month, so South Sudan (independent
+// 9 July 2011) is on the map from July 2011.
 //
 // Run with: npm run data:modern   (downloads the source into data-src/ on first run, ~280 MB)
 import fs from 'fs'
@@ -16,6 +17,7 @@ import { createRequire } from 'module'
 import { geoArea } from 'd3-geo'
 import mapshaper from 'mapshaper'
 import { MAX_YEAR, OHM_FROM } from '../src/chunks.js'
+import { monthIndex, withSpan } from '../src/dates.js'
 import { applyFixes } from './history-fixes.mjs'
 import MODERN_FIXES from './history-fixes/modern.mjs'
 
@@ -90,16 +92,27 @@ async function overpass(query) {
   return res.text()
 }
 
-// "2006-06-03" → 2006.42 (fraction of the year), "1945" → 1945.
-function dateOf(s) {
+// "2006-06-03" → [2006, 6, 3]; missing parts are null ("1945" → [1945, null, null]).
+function parts(s) {
   const m = String(s ?? '').match(/^(-?\d{1,4})(?:-(\d{2}))?(?:-(\d{2}))?/)
-  return m ? +m[1] + ((+m[2] || 1) - 1) / 12 + ((+m[3] || 1) - 1) / 365 : null
+  return m ? [+m[1], m[2] ? +m[2] : null, m[3] ? +m[3] : null] : null
 }
 
-// Years whose end falls in [start, end): from the year it began to the year before it ended.
-const firstYear = (start) => Math.floor(start)
-// (A country ending on 31 December still counts for that year.)
-const lastYear = (end) => (end === null ? MAX_YEAR : Math.floor(end + 2 / 365) - 1)
+// The months whose end a country lived through: from the month it began in, to the last month it
+// still held at the month's end. end_date is its last day, so one ending on 31 December 1991 counts
+// for December; one ending on 9 July 2011 ends with June. A bare year or month means its first day.
+function firstMonth(s) {
+  const p = parts(s)
+  return p && monthIndex(p[0], p[1] ?? 1)
+}
+function lastMonth(s) {
+  const p = parts(s)
+  if (!p) return monthIndex(MAX_YEAR, 12)
+  const [y, m, d] = p
+  if (m === null) return monthIndex(y, 1) - 1
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate()
+  return d === lastDay ? monthIndex(y, m) : monthIndex(y, m) - 1
+}
 
 async function source() {
   if (fs.existsSync(SRC)) return JSON.parse(fs.readFileSync(SRC))
@@ -107,8 +120,8 @@ async function source() {
   const list = JSON.parse(await overpass('[out:json][timeout:180];relation["boundary"="administrative"]["admin_level"="2"];out tags;'))
   const ids = list.elements
     .filter(({ tags }) => {
-      const start = dateOf(tags.start_date)
-      return start !== null && firstYear(start) <= MAX_YEAR && lastYear(dateOf(tags.end_date)) >= OHM_FROM
+      const start = firstMonth(tags.start_date)
+      return start !== null && start <= monthIndex(MAX_YEAR, 12) && lastMonth(tags.end_date) >= monthIndex(OHM_FROM, 1)
     })
     .map((r) => r.id)
   console.log(`Downloading ${ids.length} countries (a few minutes)…`)
@@ -132,21 +145,23 @@ for (const f of osmtogeojson(osm, { flatProperties: true }).features) {
   for (const [n, field, date] of DATES) if (is(n)) p[field] = date
   let name = (p['name:en'] || p.name || '').replace(/\s*\([^)]*\d{4}[^)]*\)$/, '') // "Ethiopia (1993-)"
   name = NAMES.find(([n]) => is(n))?.[1] ?? name
-  const start = dateOf(p.start_date)
+  const start = firstMonth(p.start_date)
   if (!name || SKIP.has(name) || SKIP.has(id) || start === null) continue
-  const FromYear = Math.max(firstYear(start), OHM_FROM)
-  const ToYear = Math.min(lastYear(dateOf(p.end_date)), MAX_YEAR)
-  if (FromYear > ToYear) continue
+  const from = Math.max(start, monthIndex(OHM_FROM, 1))
+  const to = Math.min(lastMonth(p.end_date), monthIndex(MAX_YEAR, 12))
+  if (from > to) continue
   const g = f.geometry
   g.coordinates = g.type === 'Polygon' ? rewind(g.coordinates) : g.coordinates.map(rewind)
   // A relation that is really a border line assembles into a near-global polygon.
   if (geoArea(g) > 4 * Math.PI * 0.08) continue
-  features.push({ type: 'Feature', properties: { Name: name, FromYear, ToYear, MemberOf: ruler.get(name) ?? null, Wikidata: p.wikidata || WIKIDATA[name] || null }, geometry: g })
+  const props = withSpan({ Name: name, MemberOf: ruler.get(name) ?? null, Wikidata: p.wikidata || WIKIDATA[name] || null }, from, to)
+  features.push({ type: 'Feature', properties: props, geometry: g })
 }
 
 // Where two countries claim the same land (Ukraine keeps Crimea in OHM after Russia's 2014
 // annexation), the one whose borders are newer is drawn on top: the side holding it now.
-features.sort((a, b) => a.properties.FromYear - b.properties.FromYear)
+const startOf = ({ properties: p }) => monthIndex(p.FromYear, p.FromMonth)
+features.sort((a, b) => startOf(a) - startOf(b))
 
 // Breakaway states and occupied land (scripts/history-fixes/modern.mjs), drawn last so they sit on top.
 const fixed = await applyFixes(features, MODERN_FIXES)

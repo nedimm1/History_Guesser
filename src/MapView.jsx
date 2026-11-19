@@ -5,6 +5,7 @@ import { feature, mesh } from 'topojson-client'
 import land50 from 'world-atlas/land-50m.json'
 import { ownerOf, assignColors, displayName } from './owners'
 import { chunkStart, FLAGS_FROM } from './chunks'
+import { monthIndex, rowStart, rowEnd } from './dates'
 import { citiesIn } from './cities'
 
 const W = 960
@@ -125,7 +126,8 @@ function labelPoints(f, proj, frame) {
 }
 
 // Border data comes in chunks (see src/chunks.js); each holds every territory alive at some point
-// in its span, with the years it existed. A year's map is the rows whose FromYear–ToYear contain it.
+// in its span, with the months it existed (src/dates.js). A month's map is the rows whose span
+// contains it; a year without a month is shown as at its end.
 const chunkCache = new Map()
 function loadChunk(start) {
   if (!chunkCache.has(start)) {
@@ -177,16 +179,17 @@ function flagOf(index, name, year) {
   return id ? { href: `${import.meta.env.BASE_URL}flags/${id}.png`, aspect: Math.min(2, Math.max(1, index.flags[id])) } : null
 }
 
-const yearCache = new Map()
-async function loadYear(year) {
-  if (!yearCache.has(year)) {
-    yearCache.set(
-      year,
+const mapCache = new Map()
+async function loadMap(year, month) {
+  const t = monthIndex(year, month ?? 12)
+  if (!mapCache.has(t)) {
+    mapCache.set(
+      t,
       loadChunk(chunkStart(year)).then((topo) => {
         const alive = {
           type: 'GeometryCollection',
           geometries: topo.objects.borders.geometries.filter(
-            (g) => g.type && g.properties.FromYear <= year && g.properties.ToYear >= year,
+            (g) => g.type && rowStart(g.properties) <= t && t <= rowEnd(g.properties),
           ),
         }
         const features = feature(topo, alive).features.map(fixWinding)
@@ -199,7 +202,7 @@ async function loadYear(year) {
       }),
     )
   }
-  return yearCache.get(year)
+  return mapCache.get(t)
 }
 
 // Land mask of a game region (built by scripts/build-regions.mjs): only polities inside it are drawn.
@@ -216,11 +219,23 @@ function loadRegionMask(key) {
   return regionCache.get(key)
 }
 
-export function preloadYear(year) {
-  loadYear(year)
+export function preloadYear(year, month) {
+  loadMap(year, month)
 }
 
-export default function MapView({ year, region, bbox }) {
+// A five-pointed star centred on (x, y), r to the tips: how capitals are marked.
+function starPoints(x, y, r) {
+  const pts = []
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5
+    const d = i % 2 ? r * 0.45 : r
+    pts.push(`${x + d * Math.cos(a)},${y + d * Math.sin(a)}`)
+  }
+  return pts.join(' ')
+}
+
+// month: 1–12, or null/undefined for a year's map (as at its end).
+export default function MapView({ year, month, region, bbox }) {
   const [data, setData] = useState(null)
   const [mask, setMask] = useState(null) // { key, feature } for the active region
   const features = data?.features
@@ -234,11 +249,11 @@ export default function MapView({ year, region, bbox }) {
     let alive = true
     setData(null)
     setView({ k: 1, x: 0, y: 0 })
-    loadYear(year).then((d) => alive && setData(d))
+    loadMap(year, month).then((d) => alive && setData(d))
     return () => {
       alive = false
     }
-  }, [year])
+  }, [year, month])
 
   useEffect(() => {
     let alive = true
@@ -362,7 +377,7 @@ export default function MapView({ year, region, bbox }) {
     for (const c of [...cities].sort((a, b) => a.rank - b.rank)) {
       if (zoom < CITY_ZOOM[c.rank]) continue
       const size = CITY_PX[c.rank] / view.k
-      const r = (c.rank === 1 ? 2.4 : 1.9) / view.k
+      const r = (c.capital || c.colony ? 3.6 : c.rank === 1 ? 2.4 : 1.9) / view.k
       const [x, y] = c.point
       const tw = c.name.length * size * (c.rank === 1 ? 0.62 : 0.58)
       const pad = r + size * 0.35
@@ -461,8 +476,8 @@ export default function MapView({ year, region, bbox }) {
           </g>
           <path d={landPath} className="coast" />
           {labels.cities.map((c) => (
-            <g key={`c-${c.name}`} className={`city rank${c.rank}`}>
-              <circle cx={c.point[0]} cy={c.point[1]} r={c.r} />
+            <g key={`c-${c.name}-${c.lon}`} className={`city rank${c.rank}${c.capital ? ' capital' : c.colony ? ' colony' : ''}`}>
+              {c.capital || c.colony ? <polygon points={starPoints(c.point[0], c.point[1], c.r)} /> : <circle cx={c.point[0]} cy={c.point[1]} r={c.r} />}
               <text x={c.tx} y={c.ty} textAnchor={c.anchor} style={{ fontSize: c.size, strokeWidth: c.size * 0.25 }}>
                 {c.name}
               </text>

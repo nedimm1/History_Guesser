@@ -11,6 +11,9 @@
 // are dropped, and each territory keeps MemberOf (its empire) so colonies get their ruler's colour,
 // and its Wikidata ID, which scripts/build-flags.mjs uses to find its flag.
 //
+// From 1800 on, its border changes are then dated to the month (scripts/month-dates.mjs), so rows
+// carry FromMonth/ToMonth too (src/dates.js).
+//
 // Chunks from OHM_FROM on come from OpenHistoricalMap instead (scripts/build-ohm.mjs); this script
 // leaves them alone.
 //
@@ -21,6 +24,8 @@ import mapshaper from 'mapshaper'
 import { MIN_YEAR, MAX_YEAR, OHM_FROM, chunks } from '../src/chunks.js'
 import { FIXES, applyFixes } from './history-fixes.mjs'
 import { RENAMES } from './build-cliopatria-renames.mjs'
+import { dateChanges, ohmDates } from './month-dates.mjs'
+import MONTH_EVENTS from './history-fixes/months.mjs'
 
 const SOURCE_ZIP = 'https://github.com/Seshat-Global-History-Databank/cliopatria/raw/main/cliopatria.geojson.zip'
 const SRC_DIR = 'data-src'
@@ -54,6 +59,8 @@ for (const f of territories.features) {
   if (fix) f.properties.Name = fix[2]
 }
 territories.features = await applyFixes(territories.features, FIXES)
+const ohm = await ohmDates(`${SRC_DIR}/ohm-dates.json`, 'https://overpass-api.openhistoricalmap.org/api/interpreter')
+territories.features = dateChanges(territories.features, MONTH_EVENTS, ohm)
 fs.writeFileSync(base, JSON.stringify(territories))
 
 const list = chunks()
